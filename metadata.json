@@ -1,0 +1,8 @@
+{
+  "name": "Account Intelligence Research Agent",
+  "description": "An AI-powered multi-agent enterprise research and account intelligence platform that automatically researches companies, analyzes business intelligence, and generates professional reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
