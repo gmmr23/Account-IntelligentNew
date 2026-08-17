@@ -8,6 +8,7 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3002;
+const CHATBOT_PORT = Number(process.env.CHATBOT_PORT) || 8005;
 
 // =========================================================================
 // HARDCODED CONFIGURATION: Set your n8n settings below
@@ -200,11 +201,6 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
   const leadershipDetail = n8nData.leadership_management_description || n8nData.leadershipDetail || 'No leadership details available.';
   const competitionDetail = n8nData.competitive_landscape_description || n8nData.competitionDetail || 'No competitive landscape details available.';
   const strategicInitiativesDetail = n8nData.strategic_initiatives_description || n8nData.strategicInitiativesDetail || 'No strategic initiatives details available.';
-  const salesforceDetail =
-    n8nData.salesforce_ecosystem_engagement_description ||
-    n8nData.salesforceDetail ||
-    (n8nData.salesforce_ecosystem_engagement && n8nData.salesforce_ecosystem_engagement.description) ||
-    'No Salesforce ecosystem engagement details available.';
 
   // Metadata
   const hq = overviewObj.headquarters || n8nData.company_overview_headquarters || n8nData.hq || 'Information not available';
@@ -262,6 +258,11 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
       date: n.date || 'Recent'
     }));
   }
+  if (recentNews.length === 0) {
+    recentNews = [
+      { title: 'Grounded intelligence update retrieved.', source: 'Research Agent', url: 'https://google.com', date: 'Recent' }
+    ];
+  }
 
   // Process strategic initiatives
   let strategicInitiatives: any[] = [];
@@ -301,32 +302,6 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
     ];
   }
 
-  // Generate a dynamic Salesforce context for parsed reports
-  const hashCode = (str: string) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return Math.abs(hash);
-  };
-  const hash = hashCode(companyName);
-  const owners = ['Sarah Jenkins (Enterprise AE)', 'Marcus Aurelius (Sr. Account Manager)', 'Diana Prince (Strategic Director)', 'Bruce Wayne (Key Account Director)'];
-  const stages = ['Warm Prospect', 'In Pipeline', 'Negotiation', 'Proposal Sent', 'Discovery Call'];
-  const values = ['$125,000', '$75,000', '$250,000', '$45,000', '$180,000'];
-  const owner = owners[hash % owners.length];
-  const stage = stages[hash % stages.length];
-  const value = values[hash % values.length];
-  const sfId = `SF-${100000 + (hash % 900000)}`;
-
-  const salesforce = {
-    status: stage,
-    owner,
-    opportunityValue: value,
-    lastContact: '3 days ago',
-    accountId: sfId,
-    notes: `CRM synced account for ${companyName}`
-  };
-
   return {
     companyName,
     website,
@@ -346,9 +321,7 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
     leadershipDetail,
     competitionDetail,
     strategicInitiativesDetail,
-    salesforceDetail,
-    sources,
-    salesforce
+    sources
   };
 }
 
@@ -370,77 +343,12 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     return m ? decode(m[1].replace(/<[^>]+>/g, '').trim()) : '';
   };
 
-  interface HeadingInfo {
-    tag: string;
-    cleanText: string;
-    startIndex: number;
-    endIndex: number;
-  }
-
-  const getAllHeadings = (): HeadingInfo[] => {
-    const headings: HeadingInfo[] = [];
-    const headingRx = /<(h[1-4])[^>]*>([\s\S]*?)<\/h[1-4]>/gi;
-    let match;
-    while ((match = headingRx.exec(html)) !== null) {
-      const tag = match[1].toLowerCase();
-      const rawText = match[2];
-      const strippedText = decode(rawText.replace(/<[^>]+>/g, '').trim());
-      const cleanText = strippedText.replace(/^\d+(?:\.\d+)*\.?\s*/, '').trim();
-      
-      headings.push({
-        tag,
-        cleanText,
-        startIndex: match.index,
-        endIndex: headingRx.lastIndex
-      });
-    }
-    return headings;
-  };
-
-  const findSectionBlock = (keyword: string): string => {
-    const headings = getAllHeadings();
-    if (headings.length === 0) return '';
-
-    const cleanKeyword = keyword.toLowerCase().trim();
-    
-    // Phase 1: Exact matches (case-insensitive)
-    let bestHeading = headings.find(h => h.cleanText.toLowerCase() === cleanKeyword);
-
-    // Phase 2: Starts-with matches (case-insensitive)
-    if (!bestHeading) {
-      bestHeading = headings.find(h => h.cleanText.toLowerCase().startsWith(cleanKeyword));
-    }
-
-    // Phase 3: Contains matches (case-insensitive)
-    if (!bestHeading) {
-      bestHeading = headings.find(h => h.cleanText.toLowerCase().includes(cleanKeyword));
-    }
-
-    if (!bestHeading) return '';
-
-    const start = bestHeading.endIndex;
-    
-    // Matched heading tag level (e.g. "h1" -> 1, "h3" -> 3)
-    const bestLevel = parseInt(bestHeading.tag.substring(1), 10);
-
-    // Stop at the next heading of same or higher level (i.e. tag level <= bestLevel)
-    const nextHeading = headings.find(h => {
-      if (h.startIndex <= bestHeading.startIndex) return false;
-      const level = parseInt(h.tag.substring(1), 10);
-      return level <= bestLevel;
-    });
-
-    const end = nextHeading ? nextHeading.startIndex : html.length;
-
-    return html.substring(start, end);
-  };
-
   // Extract the first <p> text after a section heading keyword (supports numbered headings like "2. Business Model")
   const extractSectionPara = (keyword: string): string => {
     try {
-      const block = findSectionBlock(keyword);
-      if (!block) return '';
-      const m = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      const esc = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const rx = new RegExp(`<h[1-4][^>]*>[^<]*${esc}[\\s\\S]*?<\/h[1-4]>[\\s\\S]*?<p[^>]*>([\\s\\S]*?)<\/p>`, 'i');
+      const m = html.match(rx);
       return m ? decode(m[1].replace(/<[^>]+>/g, '').trim()) : '';
     } catch { return ''; }
   };
@@ -448,9 +356,9 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
   // Extract all <li> items under the nearest <ul> after a section keyword
   const extractListUnder = (keyword: string): string[] => {
     try {
-      const block = findSectionBlock(keyword);
-      if (!block) return [];
-      const m = block.match(/<ul[^>]*>([\s\S]*?)<\/ul>/i);
+      const esc = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const rx = new RegExp(`<h[1-4][^>]*>[^<]*${esc}[\\s\\S]*?<\/h[1-4]>[\\s\\S]*?<ul[^>]*>([\\s\\S]*?)<\/ul>`, 'i');
+      const m = html.match(rx);
       if (!m) return [];
       const items: string[] = [];
       const liRx = /<li[^>]*>([\s\S]*?)<\/li>/gi;
@@ -463,12 +371,12 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     } catch { return []; }
   };
 
-  // Extract data rows (skip header row by default) from a table under a section keyword
-  const extractTableRows = (keyword: string, includeHeaders = false): string[][] => {
+  // Extract data rows (skip header row) from a table under a section keyword
+  const extractTableRows = (keyword: string): string[][] => {
     try {
-      const block = findSectionBlock(keyword);
-      if (!block) return [];
-      const m = block.match(/<table[^>]*>([\s\S]*?)<\/table>/i);
+      const esc = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const rx = new RegExp(`<h[1-4][^>]*>[^<]*${esc}[\\s\\S]*?<\/h[1-4]>[\\s\\S]*?<table[^>]*>([\\s\\S]*?)<\/table>`, 'i');
+      const m = html.match(rx);
       if (!m) return [];
       const rows: string[][] = [];
       const trRx = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -480,11 +388,8 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
         while ((td = tdRx.exec(tr[1])) !== null) {
           cells.push(decode(td[1].replace(/<[^>]+>/g, '').trim()));
         }
-        if (cells.length > 0) {
-          if (includeHeaders || !/<th/i.test(tr[1])) {
-            rows.push(cells);
-          }
-        }
+        // Skip header rows
+        if (cells.length > 0 && !/<th/i.test(tr[1])) rows.push(cells);
       }
       return rows;
     } catch { return []; }
@@ -520,74 +425,15 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     extractText(/<b>Company Size:?<\/b>\s*([^<\n]+)/i) ||
     'Information not available';
 
-  // ── Financial Table Extractor (Part 2) ──
-  const extractFinancialTable = (): string | null => {
-    try {
-      const rows = extractTableRows('Financial Performance', true);
-      if (rows.length < 2) return null;
-
-      const header = rows[0];
-      const dataRows = rows.slice(1);
-      if (dataRows.length === 0) return null;
-
-      const revIdx = header.findIndex(h => /revenue/i.test(h));
-      const growthIdx = header.findIndex(h => /growth/i.test(h));
-
-      if (revIdx === -1) return null;
-
-      const lastRow = dataRows[dataRows.length - 1];
-      
-      // Determine if there is a serial number/index column at index 0
-      let fyIdx = 0;
-      if (header[0] && (/s\.?no/i.test(header[0].trim()) || /sl\.?no/i.test(header[0].trim()) || /no\./i.test(header[0].trim()) || /^\s*#\s*$/.test(header[0].trim()))) {
-        fyIdx = 1;
-      }
-      
-      const fy = lastRow[fyIdx] ? lastRow[fyIdx].trim() : '';
-      let revValue = lastRow[revIdx] ? lastRow[revIdx].trim() : '';
-      
-      // Add 'M' if numeric and not containing scale units
-      if (revValue && !/[mb]|million|billion/i.test(revValue)) {
-        if (/^[\D\s]*\d+[\d,.]*$/.test(revValue)) {
-          revValue = `${revValue}M`;
-        }
-      }
-
-      let growthText = '';
-      if (growthIdx !== -1 && lastRow[growthIdx]) {
-        const rawGrowth = lastRow[growthIdx].trim();
-        const firstPart = rawGrowth.split(/[;,]/)[0].trim();
-        if (/growth/i.test(firstPart)) {
-          growthText = firstPart;
-        } else if (/%/.test(firstPart)) {
-          growthText = `${firstPart} growth`;
-        } else {
-          growthText = firstPart;
-        }
-      }
-
-      let result = revValue;
-      if (fy) {
-        const cleanFy = /fy/i.test(fy) ? fy : `FY${fy}`;
-        result += ` (${cleanFy})`;
-      }
-      
-      if (growthText) {
-        const yoy = /yoy/i.test(growthText) ? '' : ' YoY';
-        result += ` · ${growthText}${yoy}`;
-      }
-
-      return result;
-    } catch (e) {
-      console.error('[extractFinancialTable] Error parsing financial table:', e);
-      return null;
-    }
-  };
-
   // ── Revenue ──
-  const financialTableRev = extractFinancialTable();
+  // n8n HTML2 has table row: "Operating Income (FY 2025) | Rs. 939.87 crore"
+  const revenueRow = (() => {
+    const rows = extractTableRows('Financial Performance');
+    const r = rows.find(row => row[0] && /operating income|revenue|turnover/i.test(row[0]));
+    return r ? `${r[0]}: ${r[1]}` : '';
+  })();
   const revenue =
-    financialTableRev ||
+    revenueRow ||
     extractText(/<strong>Annual Revenue:<\/strong>\s*([^<\n]+)/i) ||
     extractText(/<b>Annual Revenue:?<\/b>\s*([^<\n]+)/i) ||
     'Information not available';
@@ -612,25 +458,10 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     extractSectionPara('Technology Stack') ||
     'No technology stack details available.';
 
-  // Part 2: financialsDetail concatenation
-  const financialsPara =
+  const financialsDetail =
     extractSectionPara('Financial Performance Summary') ||
     extractSectionPara('Financial Performance') ||
     'No financial performance details available.';
-
-  const growthList = extractListUnder('Growth Trends');
-  const compositionList = extractListUnder('Revenue Composition');
-
-  const financialsDetail = (() => {
-    let detail = financialsPara;
-    if (growthList.length > 0) {
-      detail += '\n\nGrowth Trends:\n' + growthList.map(item => `• ${item}`).join('\n');
-    }
-    if (compositionList.length > 0) {
-      detail += '\n\nRevenue Composition:\n' + compositionList.map(item => `• ${item}`).join('\n');
-    }
-    return detail;
-  })();
 
   const leadershipDetail =
     extractSectionPara('Leadership Structure') ||
@@ -647,122 +478,33 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     extractSectionPara('Strategic Initiatives') ||
     'No strategic initiatives details available.';
 
-  const salesforceDetail =
-    extractSectionPara('Salesforce Ecosystem Engagement') ||
-    extractSectionPara('Salesforce Ecosystem') ||
-    extractSectionPara('Salesforce Engagement') ||
-    'No Salesforce ecosystem engagement details available.';
-
-  // ── Tech Stack ── (Part 3: Technology Stack matching tightened + parenthetical years filtered)
+  // ── Tech Stack ── (from Digital & IT Infrastructure lists)
   const techRaw = [
+    ...extractListUnder('Digital'),
+    ...extractListUnder('Certifications'),
     ...extractListUnder('Technology Stack'),
-    ...extractListUnder('Tech Stack'),
-    ...extractListUnder('Digital & IT Infrastructure')
+    ...extractListUnder('Tech Stack')
   ];
-  const techStackFiltered = techRaw
-    .map(i => i.replace(/^[^:]+:\s*/, '').split(/[,;]/)[0].trim())
-    .filter(Boolean)
-    .filter(item => !/\(\d{4}\)/.test(item));
-
-  const techStack = techStackFiltered.length > 0
-    ? techStackFiltered.slice(0, 8)
+  const techStack = techRaw.length > 0
+    ? techRaw.slice(0, 8).map(i => i.replace(/^[^:]+:\s*/, '').split(/[,;]/)[0].trim()).filter(Boolean)
     : ['Cloud Infrastructure', 'Web Applications'];
 
-  // Helper for candidate validation (Bug A)
-  const isValidCandidate = (val: string): boolean => {
-    if (!val) return false;
-    const trimmed = val.trim();
-    if (/^\d+$/.test(trimmed)) return false;
-    if (/^\d{4}$/.test(trimmed)) return false;
-
-    // Competitor should not be the company itself (case-insensitive)
-    const lowerVal = trimmed.toLowerCase();
-    const lowerCompany = (companyName || defaultName).toLowerCase();
-    if (
-      lowerVal === lowerCompany ||
-      lowerVal.includes(lowerCompany) ||
-      lowerCompany.includes(lowerVal)
-    ) {
-      return false;
-    }
-
-    // Competitor names are typically concise (e.g. max 5 words or 50 characters)
-    if (trimmed.length > 50 || trimmed.split(/\s+/).length > 5) {
-      return false;
-    }
-
-    // Exclude common feature, specification or placeholder table words
-    const excludeTerms = [
-      'feature', 'metric', 'parameter', 'advantage', 'description', 'details', 'particulars',
-      's.no', 'sl.no', 'no.', 'property', 'specification', 'standard', 'rs.', 'usd', 'value',
-      'year', 'period', 'product', 'technology', 'strength', 'quality', 'range', 'grade',
-      'certified', 'certification', 'capacity', 'size', 'market share', 'target company'
-    ];
-    if (excludeTerms.some(term => lowerVal === term || lowerVal.startsWith(term + ' '))) {
-      return false;
-    }
-
-    const alphaMatch = trimmed.match(/[a-zA-Z]/g);
-    return alphaMatch !== null && alphaMatch.length >= 2;
-  };
-
-  // ── Competitors ── (Part 4: scanning all competitor tables & filtering numeric)
-  let compAdvRows: string[][] = [];
-  let isCompetitiveAdvantages = false;
-
-  if (extractTableRows('Competitors').length > 0) {
-    compAdvRows = extractTableRows('Competitors');
-  } else if (extractTableRows('Competitor Landscape').length > 0) {
-    compAdvRows = extractTableRows('Competitor Landscape');
-  } else if (extractTableRows('Competitive Advantages').length > 0) {
-    compAdvRows = extractTableRows('Competitive Advantages');
-    isCompetitiveAdvantages = true;
-  }
-
-  let competitorsList: string[] = [];
-  if (isCompetitiveAdvantages) {
-    // For competitive advantages, the competitors are standardly listed in the headers
-    const headerRow = extractTableRows('Competitive Advantages', true)[0] || [];
-    competitorsList = headerRow
-      .filter((col, idx) => idx > 0 && isValidCandidate(col))
-      .map(col => col.trim());
-  } else if (compAdvRows.length > 0) {
-    competitorsList = compAdvRows.map(row => {
-      // scan ALL columns of each row and pick the first that is valid
-      const found = row.find(col => isValidCandidate(col));
-      return found ? found.trim() : '';
-    }).filter(Boolean);
-  }
-
-  // Filter out any purely numeric competitor as a safety net
-  let competitors = competitorsList.filter(c => c && !/^\d+$/.test(c.trim()));
-
-  if (competitors.length === 0) {
-    competitors = ['Direct Market Peers'];
-  } else {
-    competitors = competitors.slice(0, 5);
-  }
+  // ── Competitors ── (from Competitive Advantages table or prose)
+  const compAdvRows = extractTableRows('Competitive Advantages').length > 0
+    ? extractTableRows('Competitive Advantages')
+    : extractTableRows('Competitors');
+  const competitors = compAdvRows.length > 0
+    ? compAdvRows.slice(0, 5).map(r => r[0]).filter(Boolean)
+    : ['Direct Market Peers'];
 
   // ── Leadership ── (from Key Executives table: Name | Title | Background)
-  // BUG C NOTE: Worth checking against real n8n HTML output to confirm the columns of Key Executives/Leadership tables
-  // are indeed [Name, Title, Background] in that order and there's no leading column offset causing parsing issues.
   const execRows = extractTableRows('Key Executives').length > 0
     ? extractTableRows('Key Executives')
     : (extractTableRows('Key Leadership').length > 0
        ? extractTableRows('Key Leadership')
        : extractTableRows('Leadership'));
   const leadership = execRows.length > 0
-    ? execRows.map(r => {
-        // Detect if there's a serial number / index column at r[0]
-        let offset = 0;
-        if (r[0] && (/^\d+$/.test(r[0].trim()) || /^\d+\.$/.test(r[0].trim()) || /^\d+\)$/.test(r[0].trim()))) {
-          offset = 1;
-        }
-        return {
-          name: r[offset] || 'Executive',
-          role: r[offset + 1] || 'Key Management'
-        };
-      })
+    ? execRows.map(r => ({ name: r[0] || 'Executive', role: r[1] || 'Key Management' }))
     : [{ name: 'Key Executives', role: 'Management Team' }];
 
   // ── Recent News ── (from Key Recent Events table: Date | Event | Significance)
@@ -774,12 +516,7 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
       url: 'https://google.com',
       date: r[0] || 'Recent'
     }))
-    : [{
-      title: `${companyName} continues operational expansion and strategic key initiatives`,
-      source: 'n8n Research Agent',
-      url: 'https://google.com',
-      date: 'Recent'
-    }]; // Returns fallback placeholder instead of empty array (Bug B)
+    : [{ title: 'Report retrieved successfully.', source: 'n8n Agent', url: 'https://google.com', date: 'Recent' }];
 
   // ── Strategic Initiatives ──
   const stratRaw = [
@@ -798,8 +535,6 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     : [{ name: 'n8n Research Agent', url: 'https://google.com', category: 'Official Website' }];
 
   console.log(`[parseHtmlWithRegex] company="${companyName}", hq="${hq}", industry="${industry}", revenue="${revenue}", employees="${employees}"`);
-  console.log(`[parseHtmlWithRegex] parsed revenue string: "${revenue}"`);
-  console.log(`[parseHtmlWithRegex] tech stack array:`, techStack);
 
   return {
     companyName: companyName || defaultName,
@@ -820,7 +555,6 @@ function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: s
     leadershipDetail,
     competitionDetail,
     strategicInitiativesDetail,
-    salesforceDetail,
     sources
   };
 }
@@ -947,6 +681,63 @@ app.get('/api/research/:jobId/rawhtml', (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${item.companyName.replace(/[^a-z0-9]/gi, '_')}_Intelligence_Report.html"`);
   res.send(item.rawHtml);
 });
+
+// Proxy / forwarding endpoints for RAG chatbot
+app.post('/api/chat/ingest', async (req, res) => {
+  try {
+    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    console.error('Chatbot ingest proxy error:', err);
+    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
+  }
+});
+
+app.post('/api/chat/query', async (req, res) => {
+  try {
+    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    console.error('Chatbot query proxy error:', err);
+    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
+  }
+});
+
+app.delete('/api/chat/session/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  try {
+    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/session/${jobId}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    console.error('Chatbot session reset proxy error:', err);
+    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
+  }
+});
+
+app.get('/api/chat/health', async (req, res) => {
+  try {
+    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/health`);
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    console.error('Chatbot health check proxy error:', err);
+    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
+  }
+});
+
 
 // Helper to update research history in-memory database
 function updateJobStatus(jobId: string, status: 'Completed' | 'Failed', report?: any, error?: string) {
@@ -1294,31 +1085,9 @@ function generateMockReport(companyName: string, website: string): any {
     leadershipDetail: `Guided by senior executive leadership overseeing strategic market execution.`,
     competitionDetail: `Competes within its primary industry sector against regional and global solution providers.`,
     strategicInitiativesDetail: `Focuses on expanding technology footprint, operational efficiency, and customer value delivery.`,
-    salesforceDetail: `${capitalized} demonstrates key engagement within the Salesforce ecosystem as an ISV partner, listing active applications on the Salesforce AppExchange and utilizing Salesforce CRM internally for account tracking and sales pipeline optimization.`,
     sources: [
       { name: `${capitalized} Official Portal`, url: `https://${cleanWeb}`, category: 'Official Website' }
-    ],
-    salesforce: (() => {
-      const hashCode = (str: string) => {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-          hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        return Math.abs(hash);
-      };
-      const hash = hashCode(capitalized);
-      const owners = ['Sarah Jenkins (Enterprise AE)', 'Marcus Aurelius (Sr. Account Manager)', 'Diana Prince (Strategic Director)', 'Bruce Wayne (Key Account Director)'];
-      const stages = ['Warm Prospect', 'In Pipeline', 'Negotiation', 'Proposal Sent', 'Discovery Call'];
-      const values = ['$125,000', '$75,000', '$250,000', '$45,000', '$180,000'];
-      return {
-        status: stages[hash % stages.length],
-        owner: owners[hash % owners.length],
-        opportunityValue: values[hash % values.length],
-        lastContact: '3 days ago',
-        accountId: `SF-${100000 + (hash % 900000)}`,
-        notes: `CRM synced account for ${capitalized}`
-      };
-    })()
+    ]
   };
 }
 

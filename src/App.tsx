@@ -34,117 +34,6 @@ import ToastContainer, { ToastMessage } from './components/Toast';
 // Import Utilities
 import { downloadHtmlReport } from './utils';
 
-const isDateInCurrentWeek = (dateStr: string) => {
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return false;
-  const today = new Date();
-  const day = today.getDay();
-  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(diff);
-  startOfWeek.setHours(0, 0, 0, 0);
-  
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
-  
-  return date >= startOfWeek && date <= endOfWeek;
-};
-
-function enrichWithMockSalesData(item: ResearchHistoryItem, index: number): ResearchHistoryItem {
-  const name = item.companyName || "";
-  const nameLength = name.length;
-  const fitScore = item.fitScore !== undefined ? item.fitScore : (30 + (nameLength * 7) % 66);
-  
-  let meetingDate = item.meetingDate;
-  if (!meetingDate) {
-    if (index === 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + 2);
-      meetingDate = d.toISOString().split('T')[0];
-    } else if (index === 1) {
-      const d = new Date();
-      d.setDate(d.getDate() + 5);
-      meetingDate = d.toISOString().split('T')[0];
-    } else if (index === 2) {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      meetingDate = d.toISOString().split('T')[0];
-    } else if (index === 3) {
-      const d = new Date();
-      d.setDate(d.getDate() + 12);
-      meetingDate = d.toISOString().split('T')[0];
-    }
-  }
-
-  let lastRefreshed = item.lastRefreshed;
-  if (!lastRefreshed) {
-    if (index === 1) {
-      const d = new Date();
-      d.setDate(d.getDate() - 10);
-      lastRefreshed = d.toISOString().split('T')[0];
-    } else {
-      const d = new Date();
-      d.setDate(d.getDate() - 2);
-      lastRefreshed = d.toISOString().split('T')[0];
-    }
-  }
-
-  let notes = item.notes;
-  if (!notes) {
-    if (index === 0) notes = "Interested in API integration. Focus on developer experience.";
-    else if (index === 1) notes = "Spoke with VP of Sales last month. Wants to see security audit.";
-    else if (index === 2) notes = "Follow up on pricing options discussed during the call.";
-  }
-
-  return {
-    ...item,
-    fitScore,
-    meetingDate,
-    lastRefreshed,
-    notes
-  };
-}
-
-function calculateSalesStats(enrichedHistory: ResearchHistoryItem[], baseStats: any): DashboardStats {
-  const today = new Date();
-  
-  const meetingsThisWeek = enrichedHistory.filter(item => {
-    if (!item.meetingDate) return false;
-    return isDateInCurrentWeek(item.meetingDate);
-  }).length;
-  
-  const reportsNeedingRefresh = enrichedHistory.filter(item => {
-    if (item.status !== 'Completed') return false;
-    const refDateStr = item.lastRefreshed || item.date;
-    if (!refDateStr) return false;
-    const refDate = new Date(refDateStr);
-    const diffTime = today.getTime() - refDate.getTime();
-    return diffTime > 7 * 24 * 60 * 60 * 1000;
-  }).length;
-  
-  const highFitLeads = enrichedHistory.filter(item => 
-    typeof item.fitScore === 'number' && item.fitScore >= 70
-  ).length;
-  
-  const todayStart = new Date(today);
-  todayStart.setHours(0, 0, 0, 0);
-  const followUpsDue = enrichedHistory.filter(item => {
-    if (!item.meetingDate) return false;
-    const meetDate = new Date(item.meetingDate);
-    return meetDate < todayStart;
-  }).length;
-
-  return {
-    ...baseStats,
-    meetingsThisWeek,
-    reportsNeedingRefresh,
-    highFitLeads,
-    followUpsDue,
-    recentResearch: enrichedHistory
-  };
-}
-
 export default function App() {
   // Navigation / Sidebar State
   const [currentTab, setCurrentTab] = useState<string>('research');
@@ -170,11 +59,7 @@ export default function App() {
     avgProcessingTime: 0,
     reportsSent: 0,
     topIndustries: [],
-    recentResearch: [],
-    meetingsThisWeek: 0,
-    reportsNeedingRefresh: 0,
-    highFitLeads: 0,
-    followUpsDue: 0
+    recentResearch: []
   });
 
   // System Preferences
@@ -269,20 +154,16 @@ export default function App() {
   // Sync / Load History & Stats from API
   const fetchHistoryAndStats = async () => {
     try {
-      let enrichedHistory: ResearchHistoryItem[] = [];
       const histRes = await fetch('/api/history');
       if (histRes.ok) {
         const data = await histRes.json();
-        enrichedHistory = data.map((item: ResearchHistoryItem, idx: number) => 
-          enrichWithMockSalesData(item, idx)
-        );
-        setHistoryList(enrichedHistory);
+        setHistoryList(data);
       }
 
       const statsRes = await fetch('/api/stats');
       if (statsRes.ok) {
         const statsData = await statsRes.json();
-        setDashboardStats(calculateSalesStats(enrichedHistory, statsData));
+        setDashboardStats(statsData);
       }
     } catch (err) {
       console.error('Failed to sync history from backend server:', err);
@@ -327,34 +208,25 @@ export default function App() {
         console.log('[SSE] Message received:', data);
 
         if (data.type === 'initial') {
-          const enriched = data.history.map((item: any, idx: number) => enrichWithMockSalesData(item, idx));
-          setHistoryList(enriched);
-          fetch('/api/stats')
-            .then(res => res.ok ? res.json() : null)
-            .then(statsData => {
-              if (statsData) setDashboardStats(calculateSalesStats(enriched, statsData));
-            });
+          setHistoryList(data.history);
         } else if (data.type === 'job_added') {
-          const enriched = data.history.map((item: any, idx: number) => enrichWithMockSalesData(item, idx));
-          setHistoryList(enriched);
+          setHistoryList(data.history);
           // Refresh stats
           fetch('/api/stats')
             .then(res => res.ok ? res.json() : null)
             .then(statsData => {
-              if (statsData) setDashboardStats(calculateSalesStats(enriched, statsData));
+              if (statsData) setDashboardStats(statsData);
             });
         } else if (data.type === 'job_deleted') {
-          const enriched = data.history.map((item: any, idx: number) => enrichWithMockSalesData(item, idx));
-          setHistoryList(enriched);
+          setHistoryList(data.history);
           // Refresh stats
           fetch('/api/stats')
             .then(res => res.ok ? res.json() : null)
             .then(statsData => {
-              if (statsData) setDashboardStats(calculateSalesStats(enriched, statsData));
+              if (statsData) setDashboardStats(statsData);
             });
         } else if (data.type === 'job_updated') {
-          const enriched = data.history.map((item: any, idx: number) => enrichWithMockSalesData(item, idx));
-          setHistoryList(enriched);
+          setHistoryList(data.history);
           
           const currentActiveJobId = activeJobIdRef.current;
           const target = data.job;
@@ -788,6 +660,7 @@ export default function App() {
                 {researchState === 'viewing-report' && activeReport && (
                   <ReportView
                     report={activeReport}
+                    jobId={activeJobId || ''}
                     rawHtml={historyList.find(item => item.id === activeJobId)?.rawHtml}
                     email={emailAddress}
                     onNewResearch={handleStartNewResearch}

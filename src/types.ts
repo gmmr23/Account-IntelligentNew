@@ -21,15 +21,6 @@ export interface StrategicInitiative {
   description: string;
 }
 
-export interface SalesforceData {
-  status: string;
-  owner: string;
-  opportunityValue: string;
-  lastContact: string;
-  accountId: string;
-  notes?: string;
-}
-
 export interface ResearchReport {
   companyName: string;
   website: string;
@@ -51,10 +42,8 @@ export interface ResearchReport {
   leadershipDetail: string;
   competitionDetail: string;
   strategicInitiativesDetail: string;
-  salesforceDetail?: string;
   
   sources: ResearchSource[];
-  salesforce?: SalesforceData;
 }
 
 export interface ResearchHistoryItem {
@@ -69,12 +58,6 @@ export interface ResearchHistoryItem {
   processingTime?: number; // In seconds
   error?: string;
   statusMessage?: string;
-  
-  // Sales metadata fields (optional)
-  meetingDate?: string;      // ISO date of the scheduled sales meeting
-  fitScore?: number;         // 0-100 ICP fit score
-  notes?: string;            // free-text rep notes
-  lastRefreshed?: string;    // ISO date the report data was last regenerated
 }
 
 export interface DashboardStats {
@@ -85,12 +68,6 @@ export interface DashboardStats {
   topIndustries: { name: string; count: number }[];
   recentResearch: ResearchHistoryItem[];
   volumeHistory?: { day: string; count: number }[];
-
-  // Sales-specific dashboard stats
-  meetingsThisWeek: number;
-  reportsNeedingRefresh: number;   // reports with lastRefreshed older than 7 days
-  highFitLeads: number;            // count where fitScore >= 70
-  followUpsDue: number;
 }
 
 export interface N8nIntegrationSettings {
