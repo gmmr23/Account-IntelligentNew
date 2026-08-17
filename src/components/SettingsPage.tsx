@@ -154,6 +154,9 @@ export default function SettingsPage({
               <span className="text-xs font-bold text-slate-800 block">
                 Automatic Server Key Active
               </span>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                Your application utilizes the server-side environment variable <code className="font-mono bg-slate-200/50 px-1 py-0.5 rounded text-blue-600">GROQ_API_KEY</code> loaded securely to power the chatbot, while compiling the report overview fully offline. Direct manual key handling has been restricted to secure your enterprise credentials.
+              </p>
               <div className="mt-3 inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-100 py-1 px-2.5 rounded">
                 <Lock size={11} />
                 SECURE TOKEN LOADED

@@ -24,28 +24,15 @@ import {
   X,
   Layers,
   UserCheck,
-  Sparkles
+  MessageSquare
 } from 'lucide-react';
 import { ResearchReport, LeadershipMember } from '../types';
 import { printAsPdf } from '../utils';
-
-const getRevenueCompositionBullet = (detail?: string): string => {
-  if (!detail) return '';
-  const lines = detail.split('\n');
-  const compIdx = lines.findIndex(l => l.toLowerCase().includes('revenue composition:'));
-  if (compIdx !== -1) {
-    for (let i = compIdx + 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith('•')) {
-        return line.replace(/^•\s*/, '').trim();
-      }
-    }
-  }
-  return '';
-};
+import ChatAssistant from './ChatAssistant';
 
 interface ReportViewProps {
   report: ResearchReport;
+  jobId: string;
   rawHtml?: string;
   email: string;
   onNewResearch: () => void;
@@ -53,18 +40,20 @@ interface ReportViewProps {
   onShowNotification: (message: string, type: 'success' | 'info' | 'error') => void;
 }
 
-type TabType = 'summary' | 'overview' | 'businessModel' | 'technology' | 'financials' | 'leadership' | 'competition' | 'initiatives' | 'salesforce';
+type TabType = 'overview' | 'businessModel' | 'technology' | 'financials' | 'leadership' | 'competition' | 'initiatives';
 
 export default function ReportView({
   report,
+  jobId,
   rawHtml,
   email,
   onNewResearch,
   onSendEmail,
   onShowNotification
 }: ReportViewProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('summary');
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [copied, setCopied] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Safe fallback arrays to prevent crashes if n8n returns a partial schema
   const safeLeadership = Array.isArray(report?.leadership) ? report.leadership : [];
@@ -144,7 +133,6 @@ export default function ReportView({
   };
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
-    { id: 'summary', label: 'Summary', icon: Sparkles },
     { id: 'overview', label: 'Company Overview', icon: FileText },
     { id: 'businessModel', label: 'Business Model', icon: Briefcase },
     { id: 'technology', label: 'Technology', icon: Cpu },
@@ -152,7 +140,6 @@ export default function ReportView({
     { id: 'leadership', label: 'Leadership', icon: Users },
     { id: 'competition', label: 'Competition', icon: Building2 },
     { id: 'initiatives', label: 'Strategic Goals', icon: Compass },
-    { id: 'salesforce', label: 'Salesforce Ecosystem', icon: Database },
   ];
 
   return (
@@ -181,6 +168,14 @@ export default function ReportView({
           >
             <FileText size={14} className="text-red-500" />
             Download PDF
+          </button>
+          <button
+            id="report-email-btn"
+            onClick={onSendEmail}
+            className="flex items-center gap-2 bg-blue-50 border border-blue-200 hover:bg-blue-100/70 text-blue-700 text-xs font-semibold py-2 px-3.5 rounded-xl transition-all"
+          >
+            <Mail size={14} />
+            Email Report
           </button>
           <button
             id="report-again-btn"
@@ -281,241 +276,6 @@ export default function ReportView({
 
           {/* Dynamic Tab Content Area with nice container */}
           <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-5 min-h-[300px]">
-            {activeTab === 'summary' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
-                {/* 1. Company card */}
-                <div 
-                  onClick={() => setActiveTab('overview')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-blue-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Company Profile</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-800 mt-2">{report.companyName}</h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {report.industry || 'Enterprise Services'} &middot; {report.hq || 'Location not available'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 2. Business Model card */}
-                <div 
-                  onClick={() => setActiveTab('businessModel')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-indigo-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Business Model</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
-                    </span>
-                    <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                      {(() => {
-                        const text = report.businessModel || 'No details available.';
-                        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-                        let clean = sentences.slice(0, 2).join(' ').trim();
-                        if (!clean) clean = text;
-                        return clean.length > 200 ? `${clean.substring(0, 200)}...` : clean;
-                      })()}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 3. Technology card */}
-                <div 
-                  onClick={() => setActiveTab('technology')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-blue-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Technology Stack</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-                    </span>
-                    <div className="flex flex-wrap gap-1 mt-2.5">
-                      {safeTechStack.slice(0, 4).map(tech => (
-                        <span key={tech} className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-100">
-                          {tech}
-                        </span>
-                      ))}
-                      {safeTechStack.length === 0 && (
-                        <span className="text-xs text-slate-400 italic">No technologies listed</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Financials card */}
-                <div 
-                  onClick={() => setActiveTab('financials')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-emerald-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Financial Overview</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-emerald-500 transition-colors" />
-                    </span>
-                    <div className="mt-2.5">
-                      <span className="text-sm font-bold text-slate-800 block">
-                        {report.revenue && report.revenue !== 'Information not available' ? report.revenue : 'Not disclosed'}
-                      </span>
-                      {(() => {
-                        const bullet = getRevenueCompositionBullet(report.financialsDetail);
-                        return bullet ? (
-                          <p className="text-[11px] text-slate-500 mt-1.5 border-t border-slate-100 pt-1.5">
-                            &bull; {bullet}
-                          </p>
-                        ) : null;
-                      })()}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 5. Leadership card */}
-                <div 
-                  onClick={() => setActiveTab('leadership')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-indigo-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Key Leadership</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
-                    </span>
-                    <div className="mt-2 space-y-1.5">
-                      {safeLeadership.slice(0, 3).map((leader, i) => (
-                        <div key={i} className="flex justify-between text-xs border-b border-slate-50 last:border-0 pb-1 last:pb-0">
-                          <span className="font-bold text-slate-700">{leader.name}</span>
-                          <span className="text-slate-500 font-medium">{leader.role}</span>
-                        </div>
-                      ))}
-                      {safeLeadership.length > 3 && (
-                        <div className="text-[10px] text-slate-400 text-right font-medium">
-                          + {safeLeadership.length - 3} more executives
-                        </div>
-                      )}
-                      {safeLeadership.length === 0 && (
-                        <span className="text-xs text-slate-400 italic">No leadership team details</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 6. Competition card */}
-                <div 
-                  onClick={() => setActiveTab('competition')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-amber-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-amber-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Competitors Map</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
-                    </span>
-                    <div className="flex flex-wrap gap-1 mt-2.5">
-                      {safeCompetitors.slice(0, 4).map(comp => (
-                        <span key={comp} className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-100">
-                          {comp}
-                        </span>
-                      ))}
-                      {safeCompetitors.length === 0 && (
-                        <span className="text-xs text-slate-400 italic">No competitors listed</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 7. Strategic Goals card */}
-                <div 
-                  onClick={() => setActiveTab('initiatives')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-blue-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Primary Strategic Goal</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-                    </span>
-                    <p className="text-xs text-slate-700 font-semibold mt-2.5">
-                      {safeStrategicInitiatives.length > 0
-                        ? safeStrategicInitiatives[0].title
-                        : 'No strategic goals documented'}
-                    </p>
-                    {safeStrategicInitiatives.length > 0 && (
-                      <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                        {safeStrategicInitiatives[0].description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 8. Salesforce Ecosystem Card */}
-                <div 
-                  onClick={() => setActiveTab('salesforce')}
-                  className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-sky-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] text-sky-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                      <span>Salesforce Engagement</span>
-                      <ChevronRight size={12} className="text-slate-300 group-hover:text-sky-500 transition-colors" />
-                    </span>
-                    <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                      {(() => {
-                        const text = report.salesforceDetail || (() => {
-                          const hashCode = (str: string) => {
-                            let hash = 0;
-                            for (let i = 0; i < str.length; i++) {
-                              hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                            }
-                            return Math.abs(hash);
-                          };
-                          const hash = hashCode(report.companyName || 'lexisnexis');
-                          const owners = ['Sarah Jenkins (Enterprise AE)', 'Marcus Aurelius (Sr. AM)', 'Diana Prince (Strategic Director)', 'Bruce Wayne (Key Account Director)'];
-                          const owner = owners[hash % owners.length];
-                          return `${report.companyName} demonstrates key engagement within the Salesforce ecosystem as an ISV partner, listing active applications on the Salesforce AppExchange and utilizing Salesforce CRM internally. Managed by ${owner}.`;
-                        })();
-                        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-                        let clean = sentences.slice(0, 2).join(' ').trim();
-                        if (!clean) clean = text;
-                        return clean.length > 200 ? `${clean.substring(0, 200)}...` : clean;
-                      })()}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 9. Recent Signal card */}
-                {safeRecentNews.length > 0 && (
-                  <div 
-                    onClick={() => {
-                      onShowNotification('Opening recent news signal', 'info');
-                    }}
-                    className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm hover:border-rose-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between md:col-span-2"
-                  >
-                    <div>
-                      <span className="text-[10px] text-rose-600 uppercase tracking-widest font-extrabold flex items-center justify-between">
-                        <span>Recent Signal</span>
-                        <ExternalLink size={12} className="text-slate-300 group-hover:text-rose-500 transition-colors" />
-                      </span>
-                      <div className="mt-2">
-                        <a 
-                          href={safeRecentNews[0].url} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="text-xs font-bold text-slate-800 hover:text-blue-600 transition-colors block leading-snug"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {safeRecentNews[0].title}
-                        </a>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1.5 font-medium">
-                          <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">
-                            {safeRecentNews[0].source}
-                          </span>
-                          <span>&bull;</span>
-                          <span>{safeRecentNews[0].date}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div>
@@ -555,49 +315,18 @@ export default function ReportView({
                       Operational Attributes
                     </h5>
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      {/* Enterprise Stack Check */}
-                      {(() => {
-                        const hasTech = safeTechStack.length > 0 && !safeTechStack.includes('Cloud Infrastructure');
-                        return (
-                          <div className={`flex items-center gap-1.5 font-medium bg-slate-50 p-1.5 rounded border border-slate-100 ${hasTech ? 'text-slate-700' : 'text-slate-400'}`}>
-                            <Check size={12} className={hasTech ? "text-emerald-500 shrink-0" : "text-slate-300 shrink-0"} />
-                            Enterprise Stack
-                          </div>
-                        );
-                      })()}
-
-                      {/* Active Web Assets Check */}
-                      {(() => {
-                        const hasAssets = safeSources.length > 0 && !safeSources.some(s => s.name.includes('n8n Research Agent'));
-                        return (
-                          <div className={`flex items-center gap-1.5 font-medium bg-slate-50 p-1.5 rounded border border-slate-100 ${hasAssets ? 'text-slate-700' : 'text-slate-400'}`}>
-                            <Check size={12} className={hasAssets ? "text-emerald-500 shrink-0" : "text-slate-300 shrink-0"} />
-                            Active Web Assets
-                          </div>
-                        );
-                      })()}
-
-                      {/* Strategic Roadmap Check */}
-                      {(() => {
-                        const hasRoadmap = safeStrategicInitiatives.length > 0 && !safeStrategicInitiatives.some(si => si.description.includes('Expanding B2B partnerships'));
-                        return (
-                          <div className={`flex items-center gap-1.5 font-medium bg-slate-50 p-1.5 rounded border border-slate-100 ${hasRoadmap ? 'text-slate-700' : 'text-slate-400'}`}>
-                            <Check size={12} className={hasRoadmap ? "text-emerald-500 shrink-0" : "text-slate-300 shrink-0"} />
-                            Strategic Roadmap
-                          </div>
-                        );
-                      })()}
-
-                      {/* Verified Domain Check */}
-                      {(() => {
-                        const hasDomain = report.website && report.website.trim() !== '' && report.website !== 'placeholder.com';
-                        return (
-                          <div className={`flex items-center gap-1.5 font-medium bg-slate-50 p-1.5 rounded border border-slate-100 ${hasDomain ? 'text-slate-700' : 'text-slate-400'}`}>
-                            <Check size={12} className={hasDomain ? "text-emerald-500 shrink-0" : "text-slate-300 shrink-0"} />
-                            Verified Domain
-                          </div>
-                        );
-                      })()}
+                      <div className="flex items-center gap-1.5 text-slate-700 font-medium bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <Check size={12} className="text-emerald-500 shrink-0" /> Enterprise Stack
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-700 font-medium bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <Check size={12} className="text-emerald-500 shrink-0" /> Active Web Assets
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-700 font-medium bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <Check size={12} className="text-emerald-500 shrink-0" /> Strategic Roadmap
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-700 font-medium bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <Check size={12} className="text-emerald-500 shrink-0" /> Verified Domain
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1157,29 +886,6 @@ export default function ReportView({
                 </div>
               </div>
             )}
-
-            {activeTab === 'salesforce' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Salesforce Ecosystem Engagement</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                    {report.salesforceDetail || (() => {
-                      const hashCode = (str: string) => {
-                        let hash = 0;
-                        for (let i = 0; i < str.length; i++) {
-                          hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                        }
-                        return Math.abs(hash);
-                      };
-                      const hash = hashCode(report.companyName || 'lexisnexis');
-                      const owners = ['Sarah Jenkins (Enterprise AE)', 'Marcus Aurelius (Sr. AM)', 'Diana Prince (Strategic Director)', 'Bruce Wayne (Key Account Director)'];
-                      const owner = owners[hash % owners.length];
-                      return `${report.companyName} engages with the Salesforce ecosystem as an ISV partner, listing active applications on the Salesforce AppExchange and utilizing Salesforce CRM internally. Managed by ${owner}.`;
-                    })()}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1187,41 +893,34 @@ export default function ReportView({
         <div className="space-y-6">
           
           {/* Recent News Card */}
-          {safeRecentNews.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center justify-between mb-4">
-                <span className="flex items-center gap-2">
-                  <Newspaper size={16} className="text-blue-600" />
-                  Recent Grounded News
-                </span>
-                <span className="bg-emerald-50 text-emerald-700 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-100 uppercase tracking-wider">
-                  Verified Report
-                </span>
-              </h3>
-              
-              <div className="space-y-4">
-                {safeRecentNews.map((news, idx) => (
-                  <div key={idx} className="group flex flex-col border-b border-slate-100 last:border-0 pb-3 last:pb-0">
-                    <a
-                      href={news.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors leading-tight block"
-                    >
-                      {news.title}
-                    </a>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1.5 font-medium">
-                      <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">
-                        {news.source}
-                      </span>
-                      <span>•</span>
-                      <span>{news.date}</span>
-                    </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-4">
+              <Newspaper size={16} className="text-blue-600" />
+              Recent Grounded News
+            </h3>
+            
+            <div className="space-y-4">
+              {safeRecentNews.map((news, idx) => (
+                <div key={idx} className="group flex flex-col border-b border-slate-100 last:border-0 pb-3 last:pb-0">
+                  <a
+                    href={news.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors leading-tight block"
+                  >
+                    {news.title}
+                  </a>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1.5 font-medium">
+                    <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">
+                      {news.source}
+                    </span>
+                    <span>•</span>
+                    <span>{news.date}</span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
 
           {/* Quick Competitor Summary Chips */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -1239,6 +938,33 @@ export default function ReportView({
           </div>
         </div>
       </div>
+
+      {/* Floating Chat Assistant Button */}
+      <button
+        onClick={() => setIsChatOpen(!isChatOpen)}
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-xl shadow-blue-200/80 transition-all duration-300 hover:scale-110 hover:-rotate-12 group cursor-pointer z-50"
+        title={isChatOpen ? "Minimize AI Chat Assistant" : "Open AI Chat Assistant"}
+      >
+        {isChatOpen ? (
+          <X size={22} className="transition-transform group-hover:scale-110" />
+        ) : (
+          <>
+            <MessageSquare size={22} className="transition-transform group-hover:scale-110" />
+            <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            </span>
+          </>
+        )}
+      </button>
+
+      {/* Slide-out Chat Assistant Drawer */}
+      <ChatAssistant
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        jobId={jobId}
+        report={report}
+        onShowNotification={onShowNotification}
+      />
 
     </div>
   );
