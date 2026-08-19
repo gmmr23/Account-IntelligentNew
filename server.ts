@@ -2,6 +2,19 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { 
+  Document, Packer, Paragraph, TextRun,
+  AlignmentType, BorderStyle, convertInchesToTwip
+} from 'docx';
+import { 
+  upsertUser, 
+  getUserByToken, 
+  getUserByEmail, 
+  getUserByCompanyName, 
+  getLatestUser, 
+  saveHistoryRecord, 
+  getAllHistoryRecords 
+} from './src/db';
 
 // Load environment variables
 dotenv.config();
@@ -17,12 +30,10 @@ let GLOBAL_N8N_WEBHOOK_URL: string = process.env.N8N_WEBHOOK_URL || "YOUR_N8N_WE
 let GLOBAL_N8N_MODE: string = process.env.N8N_INTEGRATION_MODE || "disabled"; // Options: 'researcher-async', 'researcher-sync', 'automation', or 'disabled'
 let GLOBAL_N8N_AUTH_TOKEN: string = process.env.N8N_AUTH_TOKEN || ""; // Optional: Add auth headers if required
 
-
-
 app.use(express.json({ limit: '10mb' }));
 
-// Memory database for research history
-let researchHistory: any[] = [];
+// Initialize research history from SQLite database
+let researchHistory: any[] = getAllHistoryRecords();
 
 // Keep track of connected clients for Server-Sent Events (SSE)
 let sseClients: { id: number; res: any }[] = [];
@@ -73,6 +84,252 @@ function broadcastUpdate(type: string, data: any) {
 }
 
 // REST API Endpoints
+
+// =========================================================================
+// AUTHENTICATION & N8N USER LOOKUP API ENDPOINTS (SQLite)
+// =========================================================================
+
+// User Login / Register endpoint
+app.post('/api/auth/login', (req, res) => {
+  const { email, companyName, password } = req.body;
+  if (!email || !companyName) {
+    return res.status(400).json({ success: false, error: 'Email and company name are required' });
+  }
+
+  try {
+    const user = upsertUser(email, companyName, password);
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        companyName: user.company_name,
+        token: user.token,
+        createdAt: user.created_at
+      }
+    });
+  } catch (err: any) {
+    console.error('Error during login/register in SQLite:', err);
+    res.status(500).json({ success: false, error: 'Failed to authenticate user' });
+  }
+});
+
+// Validate session token on app load
+app.get('/api/auth/me', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = (authHeader ? authHeader.replace('Bearer ', '') : req.query.token) as string;
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'No token provided' });
+  }
+
+  const user = getUserByToken(token);
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired session token' });
+  }
+
+  res.json({
+    success: true,
+    user: {
+      email: user.email,
+      companyName: user.company_name,
+      token: user.token,
+      createdAt: user.created_at
+    }
+  });
+});
+
+// Dedicated n8n HTTP API Endpoint to lookup user details & company name
+app.get('/api/users/lookup', (req, res) => {
+  const companyName = (req.query.companyName || req.query.company) as string;
+  const email = req.query.email as string;
+
+  let user = null;
+  if (companyName) {
+    user = getUserByCompanyName(companyName);
+  } else if (email) {
+    user = getUserByEmail(email);
+  } else {
+    user = getLatestUser();
+  }
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      error: 'No active user account found matching query criteria'
+    });
+  }
+
+  res.json({
+    success: true,
+    user: {
+      companyName: user.company_name,
+      email: user.email,
+      createdAt: user.created_at
+    }
+  });
+});
+
+// =========================================================================
+// WORD (.DOCX) PRE-MEETING REPORT GENERATION ENDPOINT FOR N8N
+// =========================================================================
+
+function parseMarkdownRuns(text: string) {
+  const runs: TextRun[] = [];
+  const boldRegex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0, match;
+  while ((match = boldRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      runs.push(new TextRun({ text: text.slice(lastIndex, match.index), size: 22, font: 'Calibri' }));
+    }
+    runs.push(new TextRun({ text: match[1], bold: true, size: 22, font: 'Calibri' }));
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    runs.push(new TextRun({ text: text.slice(lastIndex), size: 22, font: 'Calibri' }));
+  }
+  return runs;
+}
+
+function docxSectionHeading(text: string) {
+  return new Paragraph({
+    children: [new TextRun({ text, bold: true, size: 28, color: '1F3864', font: 'Calibri' })],
+    spacing: { before: 400, after: 160 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '1F3864' } }
+  });
+}
+
+function docxSubHeading(text: string) {
+  return new Paragraph({
+    children: [new TextRun({ text, bold: true, size: 24, color: '2E74B5', font: 'Calibri' })],
+    spacing: { before: 280, after: 100 },
+  });
+}
+
+function docxBodyParagraph(text: string) {
+  return new Paragraph({
+    children: parseMarkdownRuns(text),
+    spacing: { after: 120 },
+    alignment: AlignmentType.LEFT,
+  });
+}
+
+function docxBulletPoint(text: string, index: number) {
+  return new Paragraph({
+    children: [
+      new TextRun({ text: `${index + 1}.  `, bold: true, size: 22, color: '2E74B5', font: 'Calibri' }),
+      ...parseMarkdownRuns(text),
+    ],
+    spacing: { before: 120, after: 160 },
+    indent: { left: convertInchesToTwip(0.2) },
+  });
+}
+
+function docxQuestionItem(text: string, index: number) {
+  return new Paragraph({
+    children: [
+      new TextRun({ text: `Q${index + 1}.  `, bold: true, size: 22, color: '2E74B5', font: 'Calibri' }),
+      new TextRun({ text, size: 22, font: 'Calibri' }),
+    ],
+    spacing: { before: 100, after: 140 },
+    indent: { left: convertInchesToTwip(0.2) },
+  });
+}
+
+function docxSpacer() {
+  return new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 80 } });
+}
+
+app.post('/generate-report', async (req, res) => {
+  try {
+    const data = req.body;
+    const dq = data.discovery_questions || {};
+    const date = new Date(data.generated_at || Date.now()).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric'
+    });
+
+    const children: Paragraph[] = [
+      new Paragraph({
+        children: [new TextRun({ text: 'Pre-Meeting Intelligence Report', bold: true, size: 40, color: '1F3864', font: 'Calibri' })],
+        spacing: { after: 120 },
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: 'Seller:  ', bold: true, size: 24, font: 'Calibri', color: '404040' }),
+          new TextRun({ text: data.seller || '', size: 24, font: 'Calibri' }),
+        ],
+        spacing: { after: 80 },
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: 'Target:  ', bold: true, size: 24, font: 'Calibri', color: '404040' }),
+          new TextRun({ text: data.target || '', size: 24, font: 'Calibri' }),
+        ],
+        spacing: { after: 80 },
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: 'Generated:  ', bold: true, size: 22, font: 'Calibri', color: '404040' }),
+          new TextRun({ text: date, size: 22, font: 'Calibri', color: '666666' }),
+        ],
+        spacing: { after: 400 },
+      }),
+
+      docxSectionHeading('WHY PURSUE THIS ACCOUNT'),
+      docxSpacer(),
+      ...(data.why_pursue || []).map((p: string, i: number) => docxBulletPoint(p, i)),
+      docxSpacer(),
+
+      docxSectionHeading('CAPABILITY MATCH SUMMARY'),
+      docxSpacer(),
+      docxBodyParagraph(data.capability_match || ''),
+      docxSpacer(),
+
+      docxSectionHeading('DISCOVERY QUESTIONS'),
+      docxSpacer(),
+
+      docxSubHeading('Current State & Challenges'),
+      ...(dq.current_state_and_challenges || []).map((q: string, i: number) => docxQuestionItem(q, i)),
+      docxSpacer(),
+
+      docxSubHeading('Salesforce & Technology'),
+      ...(dq.salesforce_and_technology || []).map((q: string, i: number) => docxQuestionItem(q, i)),
+      docxSpacer(),
+
+      docxSubHeading('Strategic Priorities'),
+      ...(dq.strategic_priorities || []).map((q: string, i: number) => docxQuestionItem(q, i)),
+      docxSpacer(),
+
+      docxSubHeading('Decision & Next Steps'),
+      ...(dq.decision_and_next_steps || []).map((q: string, i: number) => docxQuestionItem(q, i)),
+    ];
+
+    const doc = new Document({
+      sections: [{
+        properties: {
+          page: {
+            margin: {
+              top: convertInchesToTwip(1),
+              bottom: convertInchesToTwip(1),
+              left: convertInchesToTwip(1.2),
+              right: convertInchesToTwip(1.2),
+            }
+          }
+        },
+        children,
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    const filename = `pre_meeting_${(data.target || 'report').replace(/\s+/g, '_')}.docx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get all research history
 app.get('/api/history', (req, res) => {
