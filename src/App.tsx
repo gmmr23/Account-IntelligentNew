@@ -30,11 +30,17 @@ import Dashboard from './components/Dashboard';
 import ResearchHistory from './components/ResearchHistory';
 import SettingsPage from './components/SettingsPage';
 import ToastContainer, { ToastMessage } from './components/Toast';
+import LandingPage from './components/LandingPage';
+import LoginPage from './components/LoginPage';
 
 // Import Utilities
 import { downloadHtmlReport } from './utils';
 
 export default function App() {
+  // Top-Level View Router State ('landing' | 'login' | 'app')
+  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'app'>('landing');
+  const [userCompanyName, setUserCompanyName] = useState<string>('Enterprise Corp');
+
   // Navigation / Sidebar State
   const [currentTab, setCurrentTab] = useState<string>('research');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -173,6 +179,27 @@ export default function App() {
   // Initial Seed Load
   useEffect(() => {
     fetchHistoryAndStats();
+
+    // Auto-login persistent session check via token stored in localStorage
+    const checkPersistentSession = async () => {
+      const savedToken = localStorage.getItem('aie_session_token');
+      if (savedToken) {
+        try {
+          const res = await fetch(`/api/auth/me?token=${encodeURIComponent(savedToken)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.user) {
+              setEmailAddress(data.user.email);
+              setUserCompanyName(data.user.companyName);
+              setViewMode('app');
+            }
+          }
+        } catch (err) {
+          console.error('Failed to validate persistent session token:', err);
+        }
+      }
+    };
+    checkPersistentSession();
 
     const loadServerSettings = async () => {
       try {
@@ -457,10 +484,37 @@ export default function App() {
     }
   };
 
+  if (viewMode === 'landing') {
+    return (
+      <>
+        <ToastContainer toasts={toasts} onClose={removeNotification} />
+        <LandingPage 
+          onGetStarted={() => setViewMode('login')} 
+        />
+      </>
+    );
+  }
+
+  if (viewMode === 'login') {
+    return (
+      <>
+        <ToastContainer toasts={toasts} onClose={removeNotification} />
+        <LoginPage 
+          onLogin={(info) => {
+            setEmailAddress(info.email);
+            setUserCompanyName(info.companyName);
+            setViewMode('app');
+            showNotification(`Signed in as ${info.email}`, 'success');
+          }} 
+          onBackToHome={() => setViewMode('landing')}
+        />
+      </>
+    );
+  }
+
   return (
-    <div className={`flex h-screen w-screen overflow-hidden font-sans ${getThemeClasses()}`}>
-      
-      {/* Toast Alert Drawer */}
+    <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans text-slate-900 selection:bg-blue-600 selection:text-white">
+      {/* Dynamic Toasts Notification Layer */}
       <ToastContainer toasts={toasts} onClose={removeNotification} />
 
       {/* Left Sidebar navigation panel */}
@@ -476,6 +530,12 @@ export default function App() {
         collapsed={sidebarCollapsed}
         setCollapsed={setSidebarCollapsed}
         onNewResearch={handleStartNewResearch}
+        userEmail={emailAddress}
+        userCompanyName={userCompanyName}
+        onSignOut={() => {
+          localStorage.removeItem('aie_session_token');
+          setViewMode('landing');
+        }}
       />
 
       {/* Main Container workspace */}

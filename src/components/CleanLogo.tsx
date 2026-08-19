@@ -22,25 +22,48 @@ export default function CleanLogo({ src, className, alt }: CleanLogoProps) {
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imgData.data;
+      const width = canvas.width;
+      const height = canvas.height;
 
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        
-        // Calculate max difference between channels to detect gray/white/neutral tones
-        const maxVal = Math.max(r, g, b);
-        const minVal = Math.min(r, g, b);
-        const diff = maxVal - minVal;
+      const visited = new Uint8Array(width * height);
+      const queue: number[] = [];
 
-        // If it's a shade of gray/white (very low color saturation)
-        // or if it's very bright (white background/watermarks)
-        if (diff < 40 || (r > 200 && g > 200 && b > 200)) {
-          // Make it fully transparent
-          data[i + 3] = 0;
-        } else {
-          // Keep the vibrant blue logo pixels
-          data[i + 3] = 255;
+      const isWhiteBg = (r: number, g: number, b: number) => {
+        return r > 215 && g > 215 && b > 215;
+      };
+
+      // Add all border pixels to initial queue
+      for (let x = 0; x < width; x++) {
+        queue.push(x, 0);
+        queue.push(x, height - 1);
+      }
+      for (let y = 0; y < height; y++) {
+        queue.push(0, y);
+        queue.push(width - 1, y);
+      }
+
+      let qHead = 0;
+      while (qHead < queue.length) {
+        const cx = queue[qHead++];
+        const cy = queue[qHead++];
+        const idx = cy * width + cx;
+
+        if (visited[idx]) continue;
+        visited[idx] = 1;
+
+        const pixelIdx = idx * 4;
+        const r = data[pixelIdx];
+        const g = data[pixelIdx + 1];
+        const b = data[pixelIdx + 2];
+
+        if (isWhiteBg(r, g, b)) {
+          data[pixelIdx + 3] = 0; // Make background transparent
+
+          // Add 4-directional neighbors
+          if (cx > 0) queue.push(cx - 1, cy);
+          if (cx < width - 1) queue.push(cx + 1, cy);
+          if (cy > 0) queue.push(cx, cy - 1);
+          if (cy < height - 1) queue.push(cx, cy + 1);
         }
       }
 
