@@ -132,6 +132,88 @@ export default function ReportView({
     printAsPdf(report.companyName, report, rawHtml);
   };
 
+  const downloadWordReport = async () => {
+    try {
+      onShowNotification('Generating Word document...', 'info');
+      
+      const safeWhyPursue = Array.isArray(report.why_pursue) && report.why_pursue.filter(Boolean).length > 0
+        ? report.why_pursue.filter(Boolean)
+        : [
+            `Target customer operating in the ${report.industry || 'enterprise'} sector.`,
+            `Scale opportunities identified using active web systems and technologies like ${safeTechStack.slice(0, 3).join(', ') || 'modern development frameworks'}.`,
+            `Strategic expansion goals present clear entry points for our business offerings.`
+          ];
+
+      const safeCapabilityMatch = typeof report.capability_match === 'string' && report.capability_match.trim()
+        ? report.capability_match.trim()
+        : `Our technology stack and enterprise services align with ${report.companyName}'s needs.`;
+
+      const rawDq = (report.discovery_questions || {}) as any;
+      const safeDq = {
+        current_state_and_challenges: Array.isArray(rawDq.current_state_and_challenges) && rawDq.current_state_and_challenges.filter(Boolean).length > 0
+          ? rawDq.current_state_and_challenges.filter(Boolean)
+          : [
+              "What are the primary operational challenges your team faces today?",
+              "How does your current technology stack support scaling requirements?"
+            ],
+        salesforce_and_technology: Array.isArray(rawDq.salesforce_and_technology) && rawDq.salesforce_and_technology.filter(Boolean).length > 0
+          ? rawDq.salesforce_and_technology.filter(Boolean)
+          : [
+              `What is the future integration roadmap for your tools: ${safeTechStack.slice(0, 4).join(', ') || 'infrastructure software'}?`,
+              "Are there any plans to consolidate your current platforms or databases?"
+            ],
+        strategic_priorities: Array.isArray(rawDq.strategic_priorities) && rawDq.strategic_priorities.filter(Boolean).length > 0
+          ? rawDq.strategic_priorities.filter(Boolean)
+          : [
+              `What are the most critical business priorities for ${report.companyName} this fiscal year?`,
+              "How do your technology initiatives align with long-term growth objectives?"
+            ],
+        decision_and_next_steps: Array.isArray(rawDq.decision_and_next_steps) && rawDq.decision_and_next_steps.filter(Boolean).length > 0
+          ? rawDq.decision_and_next_steps.filter(Boolean)
+          : [
+              "Who are the stakeholders involved in reviewing new enterprise vendor solutions?",
+              "What is your timeline for implementing strategic technology changes?"
+            ]
+      };
+
+      const payload = {
+        seller: email || 'Sales Professional',
+        target: report.companyName,
+        why_pursue: safeWhyPursue,
+        capability_match: safeCapabilityMatch,
+        discovery_questions: safeDq
+      };
+
+      const response = await fetch('/generate-report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pre_meeting_${report.companyName.replace(/\s+/g, '_')}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      onShowNotification('Word report downloaded successfully!', 'success');
+    } catch (error: any) {
+      console.error(error);
+      onShowNotification(error.message || 'Failed to generate Word report', 'error');
+    }
+  };
+
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'overview', label: 'Company Overview', icon: FileText },
     { id: 'businessModel', label: 'Business Model', icon: Briefcase },
@@ -168,6 +250,14 @@ export default function ReportView({
           >
             <FileText size={14} className="text-red-500" />
             Download PDF
+          </button>
+          <button
+            id="report-download-word-btn"
+            onClick={downloadWordReport}
+            className="flex items-center gap-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-xl transition-all"
+          >
+            <FileText size={14} className="text-blue-500" />
+            Download Word
           </button>
           <button
             id="report-email-btn"

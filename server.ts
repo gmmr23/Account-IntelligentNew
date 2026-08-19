@@ -320,14 +320,16 @@ app.post('/generate-report', async (req, res) => {
     });
 
     const buffer = await Packer.toBuffer(doc);
-    const filename = `pre_meeting_${(data.target || 'report').replace(/\s+/g, '_')}.docx`;
+    const cleanTarget = (data.target || 'report').replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
+    const filename = `pre_meeting_${cleanTarget}.docx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
 
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in /generate-report:", err);
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 
@@ -559,6 +561,10 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
     ];
   }
 
+  const why_pursue = n8nData.why_pursue || n8nData.whyPursue || [];
+  const capability_match = n8nData.capability_match || n8nData.capabilityMatch || '';
+  const discovery_questions = n8nData.discovery_questions || n8nData.discoveryQuestions || {};
+
   return {
     companyName,
     website,
@@ -578,7 +584,10 @@ function formatN8nReport(n8nData: any, defaultCompanyName: string, defaultWebsit
     leadershipDetail,
     competitionDetail,
     strategicInitiativesDetail,
-    sources
+    sources,
+    why_pursue,
+    capability_match,
+    discovery_questions
   };
 }
 
@@ -1344,7 +1353,31 @@ function generateMockReport(companyName: string, website: string): any {
     strategicInitiativesDetail: `Focuses on expanding technology footprint, operational efficiency, and customer value delivery.`,
     sources: [
       { name: `${capitalized} Official Portal`, url: `https://${cleanWeb}`, category: 'Official Website' }
-    ]
+    ],
+    why_pursue: [
+      `High-growth potential in ${capitalized}'s core sector.`,
+      `Opportunity to introduce advanced cloud and security integrations.`,
+      `Aligns with their current business expansion initiatives.`
+    ],
+    capability_match: `We offer end-to-end cloud infrastructure scaling, modern APIs, and web security integrations that directly match ${capitalized}'s technical roadmap.`,
+    discovery_questions: {
+      current_state_and_challenges: [
+        "What are the main performance bottlenecks in your current cloud setup?",
+        "How are you currently handling web security and compliance?"
+      ],
+      salesforce_and_technology: [
+        "Are you planning to migrate any systems to Salesforce or consolidate developer frameworks?",
+        "How do you manage developer workflows and deployment pipelines?"
+      ],
+      strategic_priorities: [
+        `What are the major growth goals for ${capitalized} in the next 12-18 months?`,
+        "How does technology innovation fit into your geographic expansion plans?"
+      ],
+      decision_and_next_steps: [
+        "Who are the key decision makers for platform infrastructure investments?",
+        "What is your timeline for evaluating new enterprise solution vendors?"
+      ]
+    }
   };
 }
 

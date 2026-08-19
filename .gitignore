@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python virtual environments
+.venv/
+venv/
+
+# Local databases
+data/account_intelligence.db
