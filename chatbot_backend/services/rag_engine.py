@@ -124,7 +124,7 @@ class RAGEngine:
         return chunks
 
     def retrieve_relevant_context(
-        self, job_id: str, query: str, min_k: int = 3, max_k: int = 20, threshold: float = 0.35
+        self, job_id: str, query: str, min_k: int = 2, max_k: int = 5, threshold: float = 0.30
     ) -> List[Dict[str, str]]:
         """
         Retrieves relevant chunks dynamically based on similarity score.

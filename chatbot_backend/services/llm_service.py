@@ -9,7 +9,7 @@ session_memories: Dict[str, List[Dict[str, str]]] = {}
 class LLMService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.GROQ_API_KEY
-        self.generation_model = config.GROQ_MODEL or "llama-3.3-70b-versatile"
+        self.generation_model = config.GROQ_MODEL or "groq/compound"
         
         # Initialize Groq client
         self.client = None
@@ -83,12 +83,16 @@ class LLMService:
             {"role": "system", "content": system_instruction}
         ]
         
-        # Add conversation history
-        for msg in history:
+        # Add conversation history (bounded to last 4 messages to prevent token limits)
+        recent_history = history[-4:]
+        for msg in recent_history:
             role = msg["role"]
-            # Map "model" to "assistant" for Groq API format compatibility
             groq_role = "assistant" if role == "model" else role
-            messages.append({"role": groq_role, "content": msg["text"]})
+            # Truncate older model responses to 400 chars to keep context light
+            content = msg["text"]
+            if groq_role == "assistant" and len(content) > 400:
+                content = content[:400] + "..."
+            messages.append({"role": groq_role, "content": content})
 
         # Add the current query formatted with context wrapper
         user_prompt = (
@@ -151,6 +155,13 @@ class LLMService:
             }
         except groq.APIStatusError as e:
             print(f"[LLM] Groq API Status Error: {e}")
+            if e.status_code == 413:
+                # Clear session history on 413 so next message works cleanly
+                self.clear_session(job_id)
+                return {
+                    "answer": "Request Payload Too Large (413): The query or context exceeded the model's token limit. Memory has been reset — please try asking your question again.",
+                    "citations": []
+                }
             return {
                 "answer": f"API Error: Groq server returned an error status ({e.status_code}).",
                 "citations": []

@@ -124,4 +124,4 @@ def clear_session(job_id: str):
 if __name__ == "__main__":
     # Start server programmatically if run directly
     print(f"Starting chatbot backend server on port {config.PORT}...")
-    uvicorn.run("app:app", host="127.0.0.1", port=config.PORT, reload=True)
+    uvicorn.run(app, host="127.0.0.1", port=config.PORT)
