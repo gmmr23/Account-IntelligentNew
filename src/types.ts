@@ -44,6 +44,16 @@ export interface ResearchReport {
   strategicInitiativesDetail: string;
   
   sources: ResearchSource[];
+
+  // Word report generation fields
+  why_pursue?: string[];
+  capability_match?: string;
+  discovery_questions?: {
+    current_state_and_challenges: string[];
+    salesforce_and_technology: string[];
+    strategic_priorities: string[];
+    decision_and_next_steps: string[];
+  };
 }
 
 export interface ResearchHistoryItem {

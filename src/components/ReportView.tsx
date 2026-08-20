@@ -115,6 +115,40 @@ export default function ReportView({
     return Math.min(Math.max(score, 45), 98);
   };
 
+  // Dynamic resolution for Headquarters, Employees, Revenue, and Industry
+  const displayHq = (() => {
+    if (report?.hq && report.hq !== 'Information not available' && report.hq.trim().length > 0) {
+      return report.hq;
+    }
+    const text = `${report?.overview || ''} ${report?.companyName || ''}`;
+    const match = text.match(/(?:headquartered in|based in|principal operations in|located in)\s+([^.,\n]+(?:,\s*[^.,\n]+)?)/i);
+    return match ? match[1].trim() : 'Global Operations';
+  })();
+
+  const displayEmployees = (() => {
+    if (report?.employees && report.employees !== 'Information not available' && report.employees.trim().length > 0) {
+      return report.employees;
+    }
+    const text = `${report?.overview || ''} ${report?.businessModel || ''}`;
+    const match = text.match(/([\d,]+\+?\s+employees|[\d,]+\+?\s+people)/i);
+    return match ? match[1].trim() : 'Enterprise Scale';
+  })();
+
+  const displayRevenue = (() => {
+    if (report?.revenue && report.revenue !== 'Information not available' && report.revenue.trim().length > 0) {
+      return report.revenue;
+    }
+    const text = `${report?.financialsDetail || ''} ${report?.businessModel || ''} ${report?.overview || ''}`;
+    const match = text.match(/([\$\£\€][\d,.]+\s*(?:billion|million|B|M)|revenue of [^\n,.]+)/i);
+    return match ? match[1].trim() : 'Corporate Filing';
+  })();
+
+  const displayIndustry = (() => {
+    if (report?.industry && report.industry !== 'Information not available' && report.industry !== 'Enterprise Services' && report.industry.trim().length > 0) {
+      return report.industry;
+    }
+    return 'Technology & Professional Services';
+  })();
 
   // Helper to extract first initials for company logo placeholder
   const getInitials = (name: string) => {
@@ -130,6 +164,83 @@ export default function ReportView({
   const downloadPDFReport = () => {
     onShowNotification('Opening print dialog — select "Save as PDF" to download', 'info');
     printAsPdf(report.companyName, report, rawHtml);
+  };
+
+  const downloadWordReport = async () => {
+    try {
+      onShowNotification('Generating Word document...', 'info');
+      
+      const safeWhyPursue = Array.isArray(report.why_pursue) && report.why_pursue.filter(Boolean).length > 0
+        ? report.why_pursue.filter(Boolean)
+        : [
+            `Target customer operating in the ${report.industry || 'enterprise'} sector.`,
+            `Scale opportunities identified using active web systems and technologies like ${safeTechStack.slice(0, 3).join(', ') || 'modern development frameworks'}.`,
+            `Strategic expansion goals present clear entry points for our business offerings.`
+          ];
+
+      const safeCapabilityMatch = typeof report.capability_match === 'string' && report.capability_match.trim()
+        ? report.capability_match.trim()
+        : `Our technology stack and enterprise services align with ${report.companyName}'s needs.`;
+
+      const rawDq = (report.discovery_questions || {}) as any;
+      const safeDq = {
+        current_state_and_challenges: Array.isArray(rawDq.current_state_and_challenges) && rawDq.current_state_and_challenges.filter(Boolean).length > 0
+          ? rawDq.current_state_and_challenges.filter(Boolean)
+          : [
+              "What are the primary operational challenges your team faces today?",
+              "How does your current technology stack support scaling requirements?"
+            ],
+        salesforce_and_technology: Array.isArray(rawDq.salesforce_and_technology) && rawDq.salesforce_and_technology.filter(Boolean).length > 0
+          ? rawDq.salesforce_and_technology.filter(Boolean)
+          : [
+              `What is the future integration roadmap for your tools: ${safeTechStack.slice(0, 4).join(', ') || 'infrastructure software'}?`,
+              "Are there any plans to consolidate your current platforms or databases?"
+            ],
+        strategic_priorities: Array.isArray(rawDq.strategic_priorities) && rawDq.strategic_priorities.filter(Boolean).length > 0
+          ? rawDq.strategic_priorities.filter(Boolean)
+          : [
+              `What are the most critical business priorities for ${report.companyName} this fiscal year?`,
+              "How do your technology initiatives align with long-term growth objectives?"
+            ]
+      };
+
+      const payload = {
+        report: report,
+        seller: email || 'Sales Professional',
+        target: report.companyName,
+        why_pursue: safeWhyPursue,
+        capability_match: safeCapabilityMatch,
+        discovery_questions: safeDq
+      };
+
+      const response = await fetch('/generate-report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pre_meeting_${report.companyName.replace(/\s+/g, '_')}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      onShowNotification('Word report downloaded successfully!', 'success');
+    } catch (error: any) {
+      console.error(error);
+      onShowNotification(error.message || 'Failed to generate Word report', 'error');
+    }
   };
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
@@ -167,7 +278,15 @@ export default function ReportView({
             className="flex items-center gap-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-xl transition-all"
           >
             <FileText size={14} className="text-red-500" />
-            Download PDF
+            Company Report PDF
+          </button>
+          <button
+            id="report-download-word-btn"
+            onClick={downloadWordReport}
+            className="flex items-center gap-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-xl transition-all"
+          >
+            <FileText size={14} className="text-blue-500" />
+            Pre-Meeting
           </button>
           <button
             id="report-email-btn"
@@ -212,9 +331,9 @@ export default function ReportView({
                 </a>
               </div>
               <p className="text-sm text-blue-100/90 font-medium mt-1 flex items-center gap-1">
-                <span>{report.industry}</span>
+                <span>{displayIndustry}</span>
                 <span className="text-white/40">•</span>
-                <span className="flex items-center gap-0.5"><MapPin size={13} /> {report.hq}</span>
+                <span className="flex items-center gap-0.5"><MapPin size={13} /> {displayHq}</span>
               </p>
             </div>
           </div>
@@ -226,16 +345,22 @@ export default function ReportView({
         </div>
 
         {/* Highlighted Meta Data Grid */}
-        <div className="grid grid-cols-2 gap-4 mt-8 pt-6 border-t border-white/10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-6 border-t border-white/10">
           <div>
-            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Primary HQ</span>
-            <span className="text-sm font-bold text-white mt-1 block truncate">{report.hq.split(',')[0]}</span>
+            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Headquarters</span>
+            <span className="text-sm font-bold text-white mt-1 block truncate" title={displayHq}>{displayHq}</span>
           </div>
           <div>
-            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Report Status</span>
-            <span className="text-sm font-bold text-emerald-300 mt-1 block flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> Completed
-            </span>
+            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Company Size</span>
+            <span className="text-sm font-bold text-white mt-1 block truncate" title={displayEmployees}>{displayEmployees}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Revenue</span>
+            <span className="text-sm font-bold text-white mt-1 block truncate" title={displayRevenue}>{displayRevenue}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-blue-200 uppercase tracking-widest block font-bold">Industry</span>
+            <span className="text-sm font-bold text-white mt-1 block truncate" title={displayIndustry}>{displayIndustry}</span>
           </div>
         </div>
       </div>
@@ -260,11 +385,12 @@ export default function ReportView({
               return (
                 <button
                   key={tab.id}
+                  id={`tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                     isSelected
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-200'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200/60'
                   }`}
                 >
                   <Icon size={13} />
@@ -299,11 +425,19 @@ export default function ReportView({
                       </div>
                       <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
                         <span className="text-slate-500 font-medium">Primary HQ Location</span>
-                        <span className="text-slate-800 font-bold">{report.hq}</span>
+                        <span className="text-slate-800 font-bold text-right max-w-[180px] truncate" title={displayHq}>{displayHq}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
+                        <span className="text-slate-500 font-medium">Employees / Size</span>
+                        <span className="text-slate-800 font-bold text-right max-w-[180px] truncate" title={displayEmployees}>{displayEmployees}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
+                        <span className="text-slate-500 font-medium">Revenue Segment</span>
+                        <span className="text-slate-800 font-bold text-right max-w-[180px] truncate" title={displayRevenue}>{displayRevenue}</span>
                       </div>
                       <div className="flex items-center justify-between text-xs pb-1">
                         <span className="text-slate-500 font-medium">Core Market Sector</span>
-                        <span className="text-slate-800 font-bold">{report.industry}</span>
+                        <span className="text-slate-800 font-bold text-right max-w-[180px] truncate" title={displayIndustry}>{displayIndustry}</span>
                       </div>
                     </div>
                   </div>
