@@ -600,74 +600,14 @@ function formatN8nReport(rawN8nData: any, defaultCompanyName: string, defaultWeb
   if (typeof industry === 'string') {
     industry = industry.replace(/Primary Industry:\s*/i, '').split('.')[0].split(';')[0].split('(')[0].trim();
   }
-  if (!industry || industry === 'Enterprise Services' || industry === 'Information not available') industry = 'Steel Manufacturing';
-
-  // 4. Flattened Tab Content Texts
-  const overviewParts = [
-    overviewObj.description,
-    overviewObj.history_evolution,
-    overviewObj.corporate_structure ? `**Corporate Structure:** ${overviewObj.corporate_structure}` : null,
-    overviewObj.promoter_holding ? `**Governance & Holdings:** ${overviewObj.promoter_holding}` : null
-  ].filter(Boolean);
-  const overview = overviewParts.join('\n\n') || n8nData.overview || 'No company overview description provided.';
-  
-  // Combine business model sub-fields into rich paragraph
-  const businessModelParts = [
-    bizObj.description,
-    bizObj.products_services ? `**Products & Services:** ${bizObj.products_services}` : null,
-    bizObj.revenue_streams ? `**Revenue Streams:** ${bizObj.revenue_streams}` : null,
-    bizObj.target_market ? `**Target Market:** ${bizObj.target_market}` : null,
-    bizObj.market_share_positioning ? `**Market Positioning:** ${bizObj.market_share_positioning}` : null,
-    bizObj.competitive_advantages ? `**Competitive Advantages:** ${bizObj.competitive_advantages}` : null
-  ].filter(Boolean);
-  const businessModel = businessModelParts.join('\n\n') || n8nData.businessModel || 'No business model description provided.';
-
-  // Combine technology sub-fields
-  const techDetailParts = [
-    techObj.description,
-    techObj.infrastructure ? `**Infrastructure:** ${techObj.infrastructure}` : null,
-    techObj.software_tools ? `**Software & Tools:** ${techObj.software_tools}` : null,
-    hiringObj.technology_signals ? `**Job Listing Tech Signals:** ${hiringObj.technology_signals}` : null,
-    techObj.innovation_rnd ? `**R&D & Innovation:** ${techObj.innovation_rnd}` : null,
-    techObj.cybersecurity ? `**Cybersecurity & Compliance:** ${techObj.cybersecurity}` : null
-  ].filter(Boolean);
-  const technologyDetail = techDetailParts.join('\n\n') || n8nData.technologyDetail || 'No technology stack description provided.';
-
-  // Combine financial sub-fields
-  const finDetailParts = [
-    finObj.description,
-    finObj.revenue ? `**Revenue & Financial Scale:** ${finObj.revenue}` : null,
-    finObj.growth_trends ? `**Growth Trends:** ${finObj.growth_trends}` : null,
-    finObj.profitability ? `**Profitability & Margins:** ${finObj.profitability}` : null,
-    finObj.market_valuation ? `**Market Valuation:** ${finObj.market_valuation}` : null
-  ].filter(Boolean);
-  const financialsDetail = finDetailParts.join('\n\n') || n8nData.financialsDetail || 'No financial performance details provided.';
-
-  // Leadership Detail
-  const leadershipParts = [
-    leadObj.description,
-    leadObj.management_structure ? `**Management Structure:** ${leadObj.management_structure}` : null,
-    leadObj.board_composition ? `**Board Composition:** ${leadObj.board_composition}` : null
-  ].filter(Boolean);
-  const leadershipDetail = leadershipParts.join('\n\n') || n8nData.leadershipDetail || 'Executive leadership and organizational oversight.';
-
-  // Competition Detail
-  const compDetailParts = [
-    compObj.description,
-    compObj.market_positioning ? `**Market Positioning:** ${compObj.market_positioning}` : null,
-    compObj.advantages ? `**Market Advantages:** ${compObj.advantages}` : null,
-    compObj.competitor_comparison ? `**Competitor Comparison:** ${compObj.competitor_comparison}` : null,
-    compObj.industry_trends ? `**Industry Trends:** ${compObj.industry_trends}` : null
-  ].filter(Boolean);
-  const competitionDetail = compDetailParts.join('\n\n') || n8nData.competitionDetail || 'No competitive landscape details provided.';
-
-  // Strategic Initiatives Detail
-  const strategicParts = [
-    salesforceObj.description ? `**Salesforce & Ecosystem:** ${salesforceObj.description}` : null,
-    maObj.description ? `**M&A & Expansion:** ${maObj.description}` : null,
-    techObj.digital_initiatives ? `**Digital Initiatives:** ${techObj.digital_initiatives}` : null
-  ].filter(Boolean);
-  const strategicInitiativesDetail = strategicParts.join('\n\n') || n8nData.strategicInitiativesDetail || 'Corporate growth and strategic expansion roadmap.';
+  // 4. Clean Primary Section Descriptions (Short & Executive-Ready)
+  const overview = overviewObj.description || overviewObj.history_evolution || n8nData.overview || 'No company overview description provided.';
+  const businessModel = bizObj.description || bizObj.products_services || n8nData.businessModel || 'No business model description provided.';
+  const technologyDetail = techObj.description || techObj.infrastructure || n8nData.technologyDetail || 'No technology stack description provided.';
+  const financialsDetail = finObj.description || finObj.revenue || n8nData.financialsDetail || 'No financial performance description provided.';
+  const leadershipDetail = leadObj.description || leadObj.board_composition || n8nData.leadershipDetail || 'No leadership description provided.';
+  const competitionDetail = compObj.description || compObj.market_positioning || n8nData.competitionDetail || 'No competitive landscape description provided.';
+  const strategicInitiativesDetail = maObj.description || maObj.strategic_initiatives || n8nData.strategicInitiativesDetail || 'No strategic initiatives description provided.';
 
   // 5. Tech Stack Array Extraction (Dynamic)
   let techStack: string[] = [];
@@ -890,8 +830,17 @@ function extractHighlightsFromObject(obj: any, keysOrder: string[], fallbackText
   return highlights.slice(0, 5);
 }
 
+function summarizeTextToShortParagraph(text: string, maxSentences: number = 3): string {
+  if (!text || text.trim().length <= 250) return text;
+  const clean = text.replace(/\*\*/g, '').replace(/^[\*\-\d\.\s]+/, '').trim();
+  const sentences = clean.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 15);
+  if (sentences.length <= maxSentences) return sentences.join(' ');
+  return sentences.slice(0, maxSentences).join(' ');
+}
+
 async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
   if (!report) return report;
+  console.log(`[Gemini Summarizer] Starting section text summarization for '${report.companyName}' using Gemini port ${CHATBOT_PORT}...`);
   try {
     const sectionsToSummarize = [
       { textKey: 'overview', name: 'Company Overview' },
@@ -905,8 +854,10 @@ async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
 
     for (const sec of sectionsToSummarize) {
       const text = report[sec.textKey];
-      if (text && text.length > 60) {
+      if (text && text.length > 50) {
+        let summarized = false;
         try {
+          console.log(`[Gemini Summarizer] Sending '${sec.name}' (${text.length} chars) to Gemini...`);
           const resp = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/summarize-text`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -916,10 +867,18 @@ async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
             const data = await resp.json();
             if (data.summary && data.summary.length > 20) {
               report[sec.textKey] = data.summary;
+              summarized = true;
+              console.log(`[Gemini Summarizer] Successfully summarized '${sec.name}' using Gemini!`);
             }
+          } else {
+            console.error(`[Gemini Summarizer] HTTP error ${resp.status} for '${sec.name}'`);
           }
-        } catch (e) {
-          // Keep original text if offline
+        } catch (e: any) {
+          console.error(`[Gemini Summarizer] Error fetching Gemini endpoint for '${sec.name}': ${e?.message || e}`);
+        }
+        if (!summarized) {
+          console.log(`[Gemini Summarizer] Falling back to sentence trimmer for '${sec.name}'`);
+          report[sec.textKey] = summarizeTextToShortParagraph(text);
         }
       }
     }
