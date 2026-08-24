@@ -882,6 +882,10 @@ function extractHighlightsFromObject(obj: any, keysOrder: string[], fallbackText
       .filter(s => s.length > 25 && s.length < 250);
     for (const s of sentences) {
       if (!highlights.includes(s) && highlights.length < 5) {
+        highlights.push(s);
+      }
+    }
+  }
 
   return highlights.slice(0, 5);
 }
