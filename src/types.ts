@@ -42,6 +42,15 @@ export interface ResearchReport {
   leadershipDetail: string;
   competitionDetail: string;
   strategicInitiativesDetail: string;
+
+  // Dynamic Section Highlights & Key Takeaways
+  overviewHighlights?: string[];
+  businessModelHighlights?: string[];
+  technologyHighlights?: string[];
+  financialHighlights?: string[];
+  leadershipHighlights?: string[];
+  competitionHighlights?: string[];
+  strategicHighlights?: string[];
   
   sources: ResearchSource[];
 

@@ -33,19 +33,18 @@ llm_service = LLMService()
 
 @app.on_event("startup")
 def startup_event():
-    print("[Startup] Validating Groq API configuration...")
-    if not config.GROQ_API_KEY:
-        print("[Startup] Warning: GROQ_API_KEY is not defined in the environment. Chatbot inference will fail.")
+    print("[Startup] Validating Gemini API configuration...")
+    if not config.GEMINI_API_KEY:
+        print("[Startup] Warning: GEMINI_API_KEY is not defined in the environment. Chatbot inference will fail.")
         return
         
     try:
-        from groq import Groq
-        base_url = config.GROQ_BASE_URL
-        client = Groq(api_key=config.GROQ_API_KEY, base_url=base_url) if base_url else Groq(api_key=config.GROQ_API_KEY)
-        client.models.list()
-        print(f"[Startup] Groq API client successfully validated and online. Model configured: {config.GROQ_MODEL}")
+        from google import genai
+        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        client.models.get(model=config.GEMINI_MODEL)
+        print(f"[Startup] Gemini API client successfully validated and online. Model configured: {config.GEMINI_MODEL}")
     except Exception as e:
-        print(f"[Startup] Warning: Failed to connect to Groq API on startup: {e}")
+        print(f"[Startup] Warning: Failed to connect to Gemini API on startup: {e}")
 
 # Pydantic Schemas
 class IngestRequest(BaseModel):
@@ -120,6 +119,15 @@ def clear_session(job_id: str):
     print(f"[API] Resetting memory for job: {job_id}")
     llm_service.clear_session(job_id)
     return {"success": True, "message": f"Session memory cleared for job {job_id}."}
+
+class SummarizeSectionRequest(BaseModel):
+    sectionName: str
+    textContent: str
+
+@app.post("/summarize-section")
+def summarize_section(payload: SummarizeSectionRequest):
+    highlights = llm_service.summarize_section_highlights(payload.sectionName, payload.textContent)
+    return {"highlights": highlights}
 
 if __name__ == "__main__":
     # Start server programmatically if run directly

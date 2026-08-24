@@ -14,10 +14,9 @@ else:
 
 # Configuration variables
 PORT = int(os.getenv("CHATBOT_PORT", 9005))
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "groq/compound")
-GROQ_BASE_URL = os.getenv("GROQ_BASE_URL")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-if not GROQ_API_KEY:
-    print("Warning: GROQ_API_KEY is not defined in the environment. Chatbot inference will fail.")
+if not GEMINI_API_KEY:
+    print("Warning: GEMINI_API_KEY is not defined in the environment. Chatbot inference will fail.")
 
