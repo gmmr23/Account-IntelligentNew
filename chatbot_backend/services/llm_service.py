@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
-import groq
-from groq import Groq
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 import chatbot_backend.config as config
 
 # Session history database: { jobId: [{"role": "user" | "model", "text": str}] }
@@ -8,14 +9,13 @@ session_memories: Dict[str, List[Dict[str, str]]] = {}
 
 class LLMService:
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or config.GROQ_API_KEY
-        self.generation_model = config.GROQ_MODEL or "groq/compound"
+        self.api_key = api_key or config.GEMINI_API_KEY
+        self.generation_model = config.GEMINI_MODEL or "gemini-2.5-flash"
         
-        # Initialize Groq client
+        # Initialize Gemini client
         self.client = None
         if self.api_key:
-            base_url = config.GROQ_BASE_URL
-            self.client = Groq(api_key=self.api_key, base_url=base_url) if base_url else Groq(api_key=self.api_key)
+            self.client = genai.Client(api_key=self.api_key)
 
     def get_session_history(self, job_id: str) -> List[Dict[str, str]]:
         if job_id not in session_memories:
@@ -31,12 +31,12 @@ class LLMService:
         self, job_id: str, query: str, retrieved_chunks: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Builds a grounded prompt from retrieved chunks, queries Groq,
+        Builds a grounded prompt from retrieved chunks, queries Google Gemini,
         manages conversation memory, and returns the response with citations.
         """
         if not self.client:
             return {
-                "answer": "System Error: Groq Client is not configured on the server. Please check the API key.",
+                "answer": "System Error: Gemini Client is not configured on the server. Please check the API key.",
                 "citations": []
             }
 
@@ -51,7 +51,6 @@ class LLMService:
         context_text = "\n\n".join(context_parts)
         citations = list(citations_set)
 
-        # 2. Strict grounding instructions
         # 2. Strict grounding instructions
         system_instruction = (
             "You are an Account Intelligence Assistant. Your task is to answer questions about the target company.\n"
@@ -78,23 +77,25 @@ class LLMService:
         # 3. Retrieve and structure conversation memory
         history = self.get_session_history(job_id)
         
-        # Prepare messages array for Groq API
-        messages = [
-            {"role": "system", "content": system_instruction}
-        ]
+        # Prepare contents list for Gemini API
+        contents: List[types.Content] = []
         
         # Add conversation history (bounded to last 4 messages to prevent token limits)
         recent_history = history[-4:]
         for msg in recent_history:
             role = msg["role"]
-            groq_role = "assistant" if role == "model" else role
-            # Truncate older model responses to 400 chars to keep context light
-            content = msg["text"]
-            if groq_role == "assistant" and len(content) > 400:
-                content = content[:400] + "..."
-            messages.append({"role": groq_role, "content": content})
+            gemini_role = "model" if role == "model" else "user"
+            content_text = msg["text"]
+            if gemini_role == "model" and len(content_text) > 400:
+                content_text = content_text[:400] + "..."
+            contents.append(
+                types.Content(
+                    role=gemini_role,
+                    parts=[types.Part.from_text(text=content_text)]
+                )
+            )
 
-        # Add the current query formatted with context wrapper
+        # Add current query formatted with context wrapper
         user_prompt = (
             f"Context Extracted from Intelligence Report:\n"
             f"==================================================\n"
@@ -102,17 +103,25 @@ class LLMService:
             f"==================================================\n\n"
             f"User Question: {query}"
         )
-        messages.append({"role": "user", "content": user_prompt})
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=user_prompt)]
+            )
+        )
 
         try:
-            print(f"[LLM] Querying Groq ({self.generation_model}) for jobId {job_id}...")
-            response = self.client.chat.completions.create(
+            print(f"[LLM] Querying Gemini ({self.generation_model}) for jobId {job_id}...")
+            response = self.client.models.generate_content(
                 model=self.generation_model,
-                messages=messages,
-                temperature=0.1,  # Low temperature for precise grounding
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.1,  # Low temperature for precise grounding
+                ),
             )
 
-            answer = response.choices[0].message.content or "I couldn't generate a response."
+            answer = response.text or "I couldn't generate a response."
             
             # If the model states it can't find information, return empty citations
             is_unsupported = "couldn't find" in answer.lower() or "not find" in answer.lower() or "unsupported" in answer.lower()
@@ -129,41 +138,21 @@ class LLMService:
                 "citations": active_citations
             }
 
-        except groq.AuthenticationError as e:
-            print(f"[LLM] Groq Authentication Error (Invalid API Key): {e}")
-            return {
-                "answer": "Authentication Error: The configured Groq API Key is invalid. Please update your environment settings.",
-                "citations": []
-            }
-        except groq.RateLimitError as e:
-            print(f"[LLM] Groq Rate Limit Error: {e}")
-            return {
-                "answer": "Rate Limit Error: Too many requests. Please wait a moment before trying again.",
-                "citations": []
-            }
-        except groq.APITimeoutError as e:
-            print(f"[LLM] Groq API Timeout Error: {e}")
-            return {
-                "answer": "Timeout Error: The request to Groq API timed out. Please try again.",
-                "citations": []
-            }
-        except groq.APIConnectionError as e:
-            print(f"[LLM] Groq API Connection Error (Network Failure): {e}")
-            return {
-                "answer": "Network Error: Failed to connect to Groq API servers. Please check your network connection.",
-                "citations": []
-            }
-        except groq.APIStatusError as e:
-            print(f"[LLM] Groq API Status Error: {e}")
-            if e.status_code == 413:
-                # Clear session history on 413 so next message works cleanly
+        except APIError as e:
+            print(f"[LLM] Gemini API Error: {e}")
+            if e.code == 429:
+                return {
+                    "answer": "Rate Limit Error: Too many requests to Gemini API. Please wait a moment before trying again.",
+                    "citations": []
+                }
+            elif e.code == 400 or e.code == 413:
                 self.clear_session(job_id)
                 return {
-                    "answer": "Request Payload Too Large (413): The query or context exceeded the model's token limit. Memory has been reset — please try asking your question again.",
+                    "answer": "Request Payload Too Large or Invalid: Memory has been reset — please try asking your question again.",
                     "citations": []
                 }
             return {
-                "answer": f"API Error: Groq server returned an error status ({e.status_code}).",
+                "answer": f"API Error: Gemini server returned an error status ({e.code}): {e.message}",
                 "citations": []
             }
         except Exception as e:
@@ -172,4 +161,63 @@ class LLMService:
                 "answer": f"API Error: Failed to generate response from LLM server ({str(e)}).",
                 "citations": []
             }
+
+    def summarize_section_highlights(self, section_name: str, text_content: str) -> List[str]:
+        """
+        Uses Gemini to generate 3 to 5 concise executive bullet point highlights
+        for a specific section based ONLY on the provided text.
+        """
+        if not self.client or not text_content or len(text_content.strip()) < 20:
+            return []
+
+        prompt = (
+            f"You are an executive research analyst. Summarize the following '{section_name}' text into "
+            f"3 to 5 clear, high-impact bullet points representing key takeaways for enterprise leadership.\n"
+            f"Return ONLY the bullet points, one per line starting with '- ' without any intro or conversational text.\n\n"
+            f"Text:\n{text_content[:4000]}"
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.generation_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.2)
+            )
+            lines = (response.text or "").strip().split("\n")
+            bullets = [
+                l.strip().lstrip("-*• ").strip()
+                for l in lines
+                if l.strip() and len(l.strip().lstrip("-*• ").strip()) > 10
+            ]
+            return bullets[:5]
+        except Exception as e:
+            print(f"[LLM] Error generating section highlights for {section_name}: {e}")
+            return []
+
+    def summarize_grand_text(self, section_name: str, text_content: str) -> str:
+        """
+        Uses Gemini to synthesize long/grand text for a section into a single,
+        focused, professional 2-3 sentence executive paragraph.
+        """
+        if not self.client or not text_content or len(text_content.strip()) < 30:
+            return text_content
+
+        prompt = (
+            f"You are an executive research intelligence analyst. Synthesize and condense the following grand text for '{section_name}' "
+            f"into a single, clean, highly readable 2-3 sentence executive summary paragraph for enterprise leadership.\n"
+            f"Do NOT use bullet points, list items, or conversational filler. Return ONLY the executive paragraph.\n\n"
+            f"Grand Text:\n{text_content[:4000]}"
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.generation_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.2)
+            )
+            summary = (response.text or "").strip()
+            return summary if len(summary) > 20 else text_content
+        except Exception as e:
+            print(f"[LLM] Error generating executive paragraph summary for {section_name}: {e}")
+            return text_content
 

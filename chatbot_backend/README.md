@@ -1,6 +1,6 @@
 # RAG Chatbot Backend (Python)
 
-This service provides a Retrieval-Augmented Generation (RAG) conversational agent interface utilizing FastAPI and the Groq SDK. It chunks company intelligence reports, performs semantic search to retrieve relevant context in memory, and uses Groq's LLM to answer user questions using strict grounding rules.
+This service provides a Retrieval-Augmented Generation (RAG) conversational agent interface utilizing FastAPI and the Google Gemini SDK. It chunks company intelligence reports, performs semantic search to retrieve relevant context in memory, and uses Google Gemini to answer user questions using strict grounding rules.
 
 ## Setup Instructions
 
@@ -15,11 +15,11 @@ pip install -r chatbot_backend/requirements.txt
 ```
 
 ### 3. Environment Config
-The service automatically loads environment variables from the root `.env` file. Ensure that `GROQ_API_KEY` is set correctly:
+The service automatically loads environment variables from the root `.env` file. Ensure that `GEMINI_API_KEY` is set correctly:
 
 ```ini
-GROQ_API_KEY="your-groq-api-key-here"
-GROQ_MODEL="llama-3.3-70b-versatile"
+GEMINI_API_KEY="your-gemini-api-key-here"
+GEMINI_MODEL="gemini-2.5-flash"
 ```
 
 ### 4. Run the API Server

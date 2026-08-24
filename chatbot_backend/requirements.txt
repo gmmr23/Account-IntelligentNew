@@ -3,5 +3,5 @@ uvicorn
 python-dotenv
 numpy
 pydantic
-groq
+google-genai
 sentence-transformers

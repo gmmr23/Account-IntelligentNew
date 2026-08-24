@@ -24,7 +24,8 @@ import {
   X,
   Layers,
   UserCheck,
-  MessageSquare
+  MessageSquare,
+  Sparkles
 } from 'lucide-react';
 import { ResearchReport, LeadershipMember } from '../types';
 import { printAsPdf } from '../utils';
@@ -405,8 +406,8 @@ export default function ReportView({
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Company Executive Summary</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.overview}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Company Executive Summary</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.overview}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
@@ -510,8 +511,8 @@ export default function ReportView({
             {activeTab === 'businessModel' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Monetization &amp; Business Model Narrative</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.businessModel}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Monetization &amp; Business Model Narrative</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.businessModel}</p>
                 </div>
 
                 <div className="border-t border-slate-200/60 pt-5 mt-6">
@@ -638,8 +639,8 @@ export default function ReportView({
             {activeTab === 'technology' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Core Systems &amp; Technology Details</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.technologyDetail}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Core Systems &amp; Technology Details</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.technologyDetail}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-slate-200/60 pt-5 mt-6">
@@ -720,8 +721,8 @@ export default function ReportView({
             {activeTab === 'financials' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Financial Analysis &amp; Growth Performance</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.financialsDetail}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Financial Analysis &amp; Growth Performance</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.financialsDetail}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-slate-200/60 pt-5 mt-6">
@@ -812,8 +813,8 @@ export default function ReportView({
             {activeTab === 'leadership' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Executive Leadership Profile</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.leadershipDetail}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Executive Leadership Profile</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.leadershipDetail}</p>
                 </div>
 
                 <div className="border-t border-slate-200/60 pt-5 mt-6">
@@ -866,8 +867,8 @@ export default function ReportView({
             {activeTab === 'competition' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Competitor Landscape &amp; Positioning</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.competitionDetail}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Competitor Landscape &amp; Positioning</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.competitionDetail}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-slate-200/60 pt-5 mt-6">
@@ -964,8 +965,8 @@ export default function ReportView({
             {activeTab === 'initiatives' && (
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Corporate Initiatives &amp; Targets</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{report.strategicInitiativesDetail}</p>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Corporate Initiatives &amp; Targets</h4>
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line font-normal">{report.strategicInitiativesDetail}</p>
                 </div>
 
                 <div className="border-t border-slate-200/60 pt-5 mt-6">
