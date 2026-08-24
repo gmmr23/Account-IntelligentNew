@@ -890,6 +890,14 @@ function extractHighlightsFromObject(obj: any, keysOrder: string[], fallbackText
   return highlights.slice(0, 5);
 }
 
+function summarizeTextToShortParagraph(text: string, maxSentences: number = 3): string {
+  if (!text || text.trim().length <= 250) return text;
+  const clean = text.replace(/\*\*/g, '').replace(/^[\*\-\d\.\s]+/, '').trim();
+  const sentences = clean.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 15);
+  if (sentences.length <= maxSentences) return sentences.join(' ');
+  return sentences.slice(0, maxSentences).join(' ');
+}
+
 async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
   if (!report) return report;
   try {
@@ -906,6 +914,7 @@ async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
     for (const sec of sectionsToSummarize) {
       const text = report[sec.textKey];
       if (text && text.length > 60) {
+        let summarized = false;
         try {
           const resp = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/summarize-text`, {
             method: 'POST',
@@ -916,10 +925,14 @@ async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
             const data = await resp.json();
             if (data.summary && data.summary.length > 20) {
               report[sec.textKey] = data.summary;
+              summarized = true;
             }
           }
         } catch (e) {
-          // Keep original text if offline
+          // Gemini offline fallback
+        }
+        if (!summarized) {
+          report[sec.textKey] = summarizeTextToShortParagraph(text);
         }
       }
     }
