@@ -194,3 +194,30 @@ class LLMService:
             print(f"[LLM] Error generating section highlights for {section_name}: {e}")
             return []
 
+    def summarize_grand_text(self, section_name: str, text_content: str) -> str:
+        """
+        Uses Gemini to synthesize long/grand text for a section into a single,
+        focused, professional 2-3 sentence executive paragraph.
+        """
+        if not self.client or not text_content or len(text_content.strip()) < 30:
+            return text_content
+
+        prompt = (
+            f"You are an executive research intelligence analyst. Synthesize and condense the following grand text for '{section_name}' "
+            f"into a single, clean, highly readable 2-3 sentence executive summary paragraph for enterprise leadership.\n"
+            f"Do NOT use bullet points, list items, or conversational filler. Return ONLY the executive paragraph.\n\n"
+            f"Grand Text:\n{text_content[:4000]}"
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.generation_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.2)
+            )
+            summary = (response.text or "").strip()
+            return summary if len(summary) > 20 else text_content
+        except Exception as e:
+            print(f"[LLM] Error generating executive paragraph summary for {section_name}: {e}")
+            return text_content
+

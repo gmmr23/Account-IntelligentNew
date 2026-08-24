@@ -533,30 +533,38 @@ function formatN8nReport(rawN8nData: any, defaultCompanyName: string, defaultWeb
   const hiringObj = n8nData.hiring || {};
 
   // 1. Clean Company Name (Dynamic for any company)
-  let companyName = defaultCompanyName || 'Enterprise Target';
+  let companyName = '';
   const nameDomainsStr = String(overviewObj.company_name_domains || n8nData.company_name_domains || n8nData.company_name || n8nData.companyName || '');
-  const legalNameMatch = nameDomainsStr.match(/Legal Name:\s*([^.\n;]+)/i);
-  const brandNameMatch = nameDomainsStr.match(/Brand Names:\s*([^.\n;]+)/i);
+  const descStr = String(overviewObj.description || n8nData.overview || '');
+
+  const legalNameMatch = nameDomainsStr.match(/Legal Name:\s*([^;\n]+)/i);
+  const brandNameMatch = nameDomainsStr.match(/Brand Names:\s*([^;\n]+)/i);
 
   if (legalNameMatch) {
     companyName = legalNameMatch[1].trim();
   } else if (brandNameMatch) {
     companyName = brandNameMatch[1].split(',')[0].trim();
-  } else if (nameDomainsStr && !nameDomainsStr.includes('Legal Name:')) {
-    companyName = nameDomainsStr.split('.')[0].split('(')[0].trim();
+  } else if (nameDomainsStr) {
+    companyName = nameDomainsStr.split(',')[0].split(';')[0].split('(')[0].replace(/operating under.*/i, '').trim();
+  } else if (descStr) {
+    const descMatch = descStr.match(/^([^.\n]+(?:\s+(?:Pvt|Ltd|Inc|Corp|LLC|Co)\.?)?)\s+(?:is|operates|specializes|was)/i);
+    if (descMatch) companyName = descMatch[1].trim();
   }
 
   if (!companyName || companyName === 'YOUR_N8N_WEBHOOK_URL_HERE') {
-    companyName = defaultCompanyName || 'Target Company';
+    companyName = defaultCompanyName || 'Research Target';
   }
 
   // 2. Resolve Website Domain (Dynamic for any company)
-  let website = defaultWebsite || 'example.com';
+  let website = defaultWebsite || '';
   const domainMatch = nameDomainsStr.match(/Primary Domain:\s*([a-zA-Z0-9-.]+)/i) || nameDomainsStr.match(/([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/);
   if (domainMatch) {
     website = domainMatch[1].trim();
   } else if (n8nData.website || n8nData.domain) {
     website = n8nData.website || n8nData.domain;
+  } else if (overviewObj.description) {
+    const webMatch = overviewObj.description.match(/([a-zA-Z0-9-]+\.(?:com|in|org|co|net))/i);
+    if (webMatch) website = webMatch[1].trim();
   }
 
   // 3. Metadata Cards (Dynamic for any company)
@@ -874,10 +882,6 @@ function extractHighlightsFromObject(obj: any, keysOrder: string[], fallbackText
       .filter(s => s.length > 25 && s.length < 250);
     for (const s of sentences) {
       if (!highlights.includes(s) && highlights.length < 5) {
-        highlights.push(s);
-      }
-    }
-  }
 
   return highlights.slice(0, 5);
 }
@@ -886,36 +890,37 @@ async function enhanceReportWithGeminiHighlights(report: any): Promise<any> {
   if (!report) return report;
   try {
     const sectionsToSummarize = [
-      { key: 'overviewHighlights', name: 'Company Overview', text: report.overview },
-      { key: 'businessModelHighlights', name: 'Business Model', text: report.businessModel },
-      { key: 'technologyHighlights', name: 'Technology Stack', text: report.technologyDetail },
-      { key: 'financialHighlights', name: 'Financial Performance', text: report.financialsDetail },
-      { key: 'leadershipHighlights', name: 'Leadership & Governance', text: report.leadershipDetail },
-      { key: 'competitionHighlights', name: 'Competitive Landscape', text: report.competitionDetail },
-      { key: 'strategicHighlights', name: 'Strategic Initiatives', text: report.strategicInitiativesDetail },
+      { textKey: 'overview', name: 'Company Overview' },
+      { textKey: 'businessModel', name: 'Business Model' },
+      { textKey: 'technologyDetail', name: 'Technology Stack' },
+      { textKey: 'financialsDetail', name: 'Financial Performance' },
+      { textKey: 'leadershipDetail', name: 'Leadership & Governance' },
+      { textKey: 'competitionDetail', name: 'Competitive Landscape' },
+      { textKey: 'strategicInitiativesDetail', name: 'Strategic Initiatives' },
     ];
 
     for (const sec of sectionsToSummarize) {
-      if (sec.text && sec.text.length > 50) {
+      const text = report[sec.textKey];
+      if (text && text.length > 60) {
         try {
-          const resp = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/summarize-section`, {
+          const resp = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/summarize-text`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sectionName: sec.name, textContent: sec.text }),
+            body: JSON.stringify({ sectionName: sec.name, textContent: text }),
           });
           if (resp.ok) {
             const data = await resp.json();
-            if (Array.isArray(data.highlights) && data.highlights.length > 0) {
-              report[sec.key] = data.highlights;
+            if (data.summary && data.summary.length > 20) {
+              report[sec.textKey] = data.summary;
             }
           }
         } catch (e) {
-          // Fallback to deterministic highlights if LLM is offline
+          // Keep original text if offline
         }
       }
     }
   } catch (err) {
-    console.error('Error enhancing report with Gemini highlights:', err);
+    console.error('Error enhancing report with Gemini summaries:', err);
   }
   return report;
 }
@@ -925,6 +930,8 @@ async function parseHtmlReportToStructured(html: string, defaultName: string, de
   console.log('Using regex-based parser to structure the HTML report...');
   return parseHtmlWithRegex(html, defaultName, defaultWebsite);
 }
+
+
 
 // Regex-based fallback parser — matches n8n HTML2 node output structure
 function parseHtmlWithRegex(html: string, defaultName: string, defaultWebsite: string): any {
@@ -1157,17 +1164,28 @@ app.post('/api/research/callback/:jobId', async (req, res) => {
 
   let idx = researchHistory.findIndex(item => item.id === jobId);
   if (idx === -1) {
-    // If job does not exist in history (e.g. direct n8n manual test run), create a new job entry automatically
-    const newJob: any = {
-      id: jobId,
-      companyName: 'Target Company',
-      website: 'example.com',
-      status: 'Processing',
-      date: new Date().toISOString()
-    };
-    researchHistory.unshift(newJob);
-    idx = 0;
-    console.log(`[Callback API] Created missing job entry for '${jobId}' from n8n callback.`);
+    // 1. First look for an active pending job created from the UI
+    const pendingIdx = researchHistory.findIndex(item => item.status === 'Processing' || (item.email && item.email.length > 3));
+    if (pendingIdx !== -1) {
+      idx = pendingIdx;
+      console.log(`[Callback API] Mapped callback '${jobId}' directly to active user job '${researchHistory[idx].id}' (${researchHistory[idx].companyName})`);
+    } else if (researchHistory.length > 0) {
+      // 2. Otherwise map to the most recent user job in history
+      idx = 0;
+      console.log(`[Callback API] Mapped callback '${jobId}' directly to latest job '${researchHistory[idx].id}' (${researchHistory[idx].companyName})`);
+    } else {
+      // 3. Fallback only if history is completely empty
+      const newJob: any = {
+        id: jobId,
+        companyName: 'Research Target',
+        website: 'example.com',
+        status: 'Processing',
+        date: new Date().toISOString()
+      };
+      researchHistory.unshift(newJob);
+      idx = 0;
+      console.log(`[Callback API] Created missing job entry for '${jobId}' from n8n callback.`);
+    }
   }
 
   // Record step identifier if provided
@@ -1259,6 +1277,14 @@ app.post('/api/research/callback/:jobId', async (req, res) => {
 
   // Enhance section highlights using Gemini LLM asynchronously if online
   formattedReport = await enhanceReportWithGeminiHighlights(formattedReport);
+
+  // Update history item metadata with extracted company name and domain
+  if (formattedReport.companyName) {
+    researchHistory[idx].companyName = formattedReport.companyName;
+  }
+  if (formattedReport.website) {
+    researchHistory[idx].website = formattedReport.website;
+  }
 
   researchHistory[idx].status = 'Completed';
   researchHistory[idx].report = formattedReport;

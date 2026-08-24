@@ -129,6 +129,11 @@ def summarize_section(payload: SummarizeSectionRequest):
     highlights = llm_service.summarize_section_highlights(payload.sectionName, payload.textContent)
     return {"highlights": highlights}
 
+@app.post("/summarize-text")
+def summarize_text(payload: SummarizeSectionRequest):
+    summary = llm_service.summarize_grand_text(payload.sectionName, payload.textContent)
+    return {"summary": summary}
+
 if __name__ == "__main__":
     # Start server programmatically if run directly
     print(f"Starting chatbot backend server on port {config.PORT}...")
