@@ -333,63 +333,7 @@ app.post('/generate-report', async (req, res) => {
   }
 });
 
-// =========================================================================
-// PYTHON CHATBOT FASTAPI BACKEND PROXY ENDPOINTS (Port 9005)
-// =========================================================================
-const CHATBOT_BASE_URL = process.env.CHATBOT_URL || 'http://127.0.0.1:9005';
 
-app.get('/api/chat/health', async (req, res) => {
-  try {
-    const response = await fetch(`${CHATBOT_BASE_URL}/health`);
-    if (response.ok) {
-      const data = await response.json();
-      return res.json(data);
-    }
-    res.status(503).json({ status: 'offline', message: 'FastAPI service unavailable' });
-  } catch (err: any) {
-    res.status(503).json({ status: 'offline', error: err.message });
-  }
-});
-
-app.post('/api/chat/ingest', async (req, res) => {
-  try {
-    const response = await fetch(`${CHATBOT_BASE_URL}/ingest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/chat/query', async (req, res) => {
-  try {
-    const response = await fetch(`${CHATBOT_BASE_URL}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/chat/session/:jobId', async (req, res) => {
-  try {
-    const response = await fetch(`${CHATBOT_BASE_URL}/session/${req.params.jobId}`, {
-      method: 'DELETE'
-    });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Get all research history
 app.get('/api/history', (req, res) => {
@@ -1276,61 +1220,6 @@ app.get('/api/research/:jobId/rawhtml', (req, res) => {
   res.send(item.rawHtml);
 });
 
-// Proxy / forwarding endpoints for RAG chatbot
-app.post('/api/chat/ingest', async (req, res) => {
-  try {
-    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/ingest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    return res.status(response.status).json(data);
-  } catch (err: any) {
-    console.error('Chatbot ingest proxy error:', err);
-    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
-  }
-});
-
-app.post('/api/chat/query', async (req, res) => {
-  try {
-    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    return res.status(response.status).json(data);
-  } catch (err: any) {
-    console.error('Chatbot query proxy error:', err);
-    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
-  }
-});
-
-app.delete('/api/chat/session/:jobId', async (req, res) => {
-  const { jobId } = req.params;
-  try {
-    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/session/${jobId}`, {
-      method: 'DELETE'
-    });
-    const data = await response.json();
-    return res.status(response.status).json(data);
-  } catch (err: any) {
-    console.error('Chatbot session reset proxy error:', err);
-    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
-  }
-});
-
-app.get('/api/chat/health', async (req, res) => {
-  try {
-    const response = await fetch(`http://127.0.0.1:${CHATBOT_PORT}/health`);
-    const data = await response.json();
-    return res.status(response.status).json(data);
-  } catch (err: any) {
-    console.error('Chatbot health check proxy error:', err);
-    return res.status(502).json({ error: `Chatbot backend unreachable on port ${CHATBOT_PORT}: ${err.message || err}` });
-  }
-});
 
 
 // Helper to update research history in-memory database

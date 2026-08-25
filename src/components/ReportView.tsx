@@ -23,13 +23,10 @@ import {
   Check,
   X,
   Layers,
-  UserCheck,
-  MessageSquare,
-  Sparkles
+  UserCheck
 } from 'lucide-react';
 import { ResearchReport, LeadershipMember } from '../types';
 import { printAsPdf } from '../utils';
-import ChatAssistant from './ChatAssistant';
 
 interface ReportViewProps {
   report: ResearchReport;
@@ -54,7 +51,6 @@ export default function ReportView({
 }: ReportViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [copied, setCopied] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Safe fallback arrays to prevent crashes if n8n returns a partial schema
   const safeLeadership = Array.isArray(report?.leadership) ? report.leadership : [];
@@ -1074,32 +1070,7 @@ export default function ReportView({
         </div>
       </div>
 
-      {/* Floating Chat Assistant Button */}
-      <button
-        onClick={() => setIsChatOpen(!isChatOpen)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-xl shadow-blue-200/80 transition-all duration-300 hover:scale-110 hover:-rotate-12 group cursor-pointer z-50"
-        title={isChatOpen ? "Minimize AI Chat Assistant" : "Open AI Chat Assistant"}
-      >
-        {isChatOpen ? (
-          <X size={22} className="transition-transform group-hover:scale-110" />
-        ) : (
-          <>
-            <MessageSquare size={22} className="transition-transform group-hover:scale-110" />
-            <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-            </span>
-          </>
-        )}
-      </button>
 
-      {/* Slide-out Chat Assistant Drawer */}
-      <ChatAssistant
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        jobId={jobId}
-        report={report}
-        onShowNotification={onShowNotification}
-      />
 
     </div>
   );
